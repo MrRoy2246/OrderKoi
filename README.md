@@ -27,34 +27,6 @@ OrderKoi is an order-tracking platform for small online sellers (F-commerce / Fa
 | Auth | JWT (access tokens) |
 | API Docs | Auto-generated Swagger UI at `/docs` |
 
-## Project Structure
-
-```
-OrderKoi/
-├── backend/          # FastAPI application
-│   ├── app/
-│   │   ├── main.py       # App entry point
-│   │   ├── models.py     # Database models
-│   │   ├── schemas.py    # Request/response schemas
-│   │   ├── auth.py       # JWT authentication
-│   │   ├── routes/       # API route handlers
-│   │   └── database.py   # DB connection & session
-│   ├── tests/            # pytest test suite
-│   ├── requirements.txt
-│   └── .env.example
-├── frontend/         # React application
-│   └── src/
-│       ├── pages/        # Page components
-│       ├── components/   # Reusable components
-│       ├── api/          # API client
-│       └── ...
-├── docs/
-│   ├── BACKEND_GUIDE.md   # How to run & test the backend
-│   └── FRONTEND_GUIDE.md  # How to run & test the frontend
-├── PHASES.md         # Build plan — read this first!
-└── README.md
-```
-
 ## Documentation
 
 - 📋 **[PHASES.md](./PHASES.md)** — the full build plan with self-testing checklists
