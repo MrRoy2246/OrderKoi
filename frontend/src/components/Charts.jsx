@@ -199,8 +199,15 @@ export function BarChart({ data, measure = "count", barColor = "var(--primary)",
       </div>
 
       {/* Hover layer — hit targets span the full column height, so
-          every mark is easy to hit (spec: targets >= 24px) */}
-      <div className="barchart-hover" style={{ height: `${plotHeight}px` }}>
+          every mark is easy to hit (spec: targets >= 24px).
+          Leave is handled on the ROW, not per bar: moving between
+          adjacent bars fires leave+enter as two separate events,
+          which unmounts and remounts the tooltip — visible blink. */}
+      <div
+        className="barchart-hover"
+        style={{ height: `${plotHeight}px` }}
+        onMouseLeave={() => setHovered(null)}
+      >
         {data.map((d, i) => (
           <button
             key={d.key}
@@ -208,8 +215,13 @@ export function BarChart({ data, measure = "count", barColor = "var(--primary)",
             className="barchart-hit"
             onMouseEnter={() => setHovered(i)}
             onFocus={() => setHovered(i)}
-            onMouseLeave={() => setHovered(null)}
-            onBlur={() => setHovered(null)}
+            onBlur={(e) => {
+              // Only clear when focus leaves the whole row — tabbing
+              // between bars must not blink either
+              if (!e.currentTarget.parentElement?.contains(e.relatedTarget)) {
+                setHovered(null);
+              }
+            }}
             aria-label={`${keyLabel(d.key, { full: true })}: ${format(d.value)}`}
           />
         ))}
