@@ -1897,23 +1897,42 @@ textarea {
 /* Subscription card */
 .subscription-card {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  flex-direction: column;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px 20px;
   margin-bottom: 16px;
   box-shadow: var(--shadow-1);
   text-decoration: none;
   color: inherit;
-  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+  overflow: hidden;
 }
 
-.subscription-card:hover {
-  border-color: var(--primary-tint-strong);
-  box-shadow: var(--shadow-2);
+.subscription-card-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  text-decoration: none;
+  color: inherit;
+  transition: background var(--t-fast);
+}
+
+.subscription-card-main:hover {
+  background: var(--surface-sunken);
+}
+
+/* Meter footer strip — full-width row under a hairline divider,
+   like Stripe's billing cards */
+.subscription-card-meter {
+  padding: 10px 20px 12px;
+  border-top: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(28, 25, 23, 0.015), transparent 60%);
+}
+
+.subscription-card-meter .free-meter {
+  max-width: none;
 }
 
 .subscription-info {

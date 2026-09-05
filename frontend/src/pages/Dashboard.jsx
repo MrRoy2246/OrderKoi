@@ -78,30 +78,40 @@ function SubscriptionCard({ seller, stats }) {
   }
 
   return (
-    <Link to="/dashboard/settings" className="subscription-card" title="Manage your subscription">
-      <div className="subscription-info">
-        <span className={`subscription-plan${active ? " subscription-plan--pro" : ""}`}>
-          {active && <Icon name="sparkles" size={16} className="subscription-plan-icon" />}
-          {headline}
-        </span>
-        <span className="subscription-subline">{subline}</span>
-        {meter && (
-          <div className={`subscription-meter subscription-meter--${meter.tone}`}>
-            <div className="subscription-meter-track">
-              <div className="subscription-meter-fill" style={{ width: `${meter.pct}%` }} />
+    <div className="subscription-card">
+      <Link
+        to="/dashboard/settings"
+        className="subscription-card-main"
+        title="Manage your subscription"
+      >
+        <div className="subscription-info">
+          <span className={`subscription-plan${active ? " subscription-plan--pro" : ""}`}>
+            {active && <Icon name="sparkles" size={16} className="subscription-plan-icon" />}
+            {headline}
+          </span>
+          <span className="subscription-subline">{subline}</span>
+          {meter && (
+            <div className={`subscription-meter subscription-meter--${meter.tone}`}>
+              <div className="subscription-meter-track">
+                <div className="subscription-meter-fill" style={{ width: `${meter.pct}%` }} />
+              </div>
+              <span className="subscription-meter-label">
+                {meter.label} <span className="subscription-meter-detail">· {meter.detail}</span>
+              </span>
             </div>
-            <span className="subscription-meter-label">
-              {meter.label} <span className="subscription-meter-detail">· {meter.detail}</span>
-            </span>
-          </div>
-        )}
-        {showFreeMeter && <FreeOrderMeter limit={limit} used={used} />}
-      </div>
-      <span className="subscription-action" aria-hidden="true">
-        {active ? "Manage / renew" : "Upgrade to Pro"}
-        <Icon name="arrowRight" size={15} />
-      </span>
-    </Link>
+          )}
+        </div>
+        <span className="subscription-action" aria-hidden="true">
+          {active ? "Manage / renew" : "Upgrade to Pro"}
+          <Icon name="arrowRight" size={15} />
+        </span>
+      </Link>
+      {showFreeMeter && (
+        <div className="subscription-card-meter">
+          <FreeOrderMeter limit={limit} used={used} />
+        </div>
+      )}
+    </div>
   );
 }
 
