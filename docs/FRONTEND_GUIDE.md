@@ -33,10 +33,13 @@ npm run dev
 | Route | What | Who |
 |---|---|---|
 | `/` | Landing page | Everyone |
-| `/login`, `/signup` | Auth | Sellers |
-| `/dashboard` | Order management | Sellers (login required) |
-| `/dashboard/orders/:id` | Order detail | Sellers (login required) |
-| `/dashboard/settings` | Store settings | Sellers (login required) |
+| `/login`, `/signup`, `/forgot-password`, `/reset-password` | Auth | Sellers |
+| `/dashboard` | Overview: stats, charts, subscription card | Sellers (login required) |
+| `/dashboard/orders`, `/dashboard/orders/:id` | Order list + detail | Sellers (login required) |
+| `/dashboard/settings` | Store settings + Plan & subscription (history) | Sellers (login required) |
+| `/admin` | Platform overview (KPIs follow the date filter) | Admin only |
+| `/admin/sellers`, `/admin/sellers/:id`, `/admin/requests` | Seller & plan management, upgrade queue | Admin only |
+| `/order/:slug` | **Public order form** (paused page when free limit hit) | Customers — no login |
 | `/track/:code` | **Public tracking page** | Customers — no login |
 
 ## Production build
@@ -63,11 +66,13 @@ frontend/
 ├── src/
 │   ├── main.jsx           # App bootstrap
 │   ├── App.jsx            # Router setup
-│   ├── api/client.js      # Axios/fetch wrapper → talks to backend
-│   ├── pages/             # One file per page
-│   ├── components/        # Reusable UI pieces (tables, badges, forms)
-│   └── styles/            # CSS
-├── package.json
+│   ├── index.css          # Design system + all component styles (tokens: koi vermilion on warm paper)
+│   ├── api/client.js      # API wrapper → talks to backend
+│   ├── auth/AuthContext.jsx  # Token storage, login state
+│   ├── pages/             # One file per page (dashboard, orders, settings, admin/*, public form, tracking)
+│   ├── components/        # Reusable UI (badges, meters, modals, charts, skeletons)
+│   └── utils/             # Date/business-time, order formatting, hooks
+├── package.json           # lint (oxlint) + build scripts
 ├── vite.config.js         # Dev proxy → backend
 └── index.html
 ```

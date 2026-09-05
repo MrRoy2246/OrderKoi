@@ -31,7 +31,7 @@ pip install -r requirements.txt
 ## Running the server
 
 ```bash
-uvicorn app.main:app --reload
+uvicorn app.main:app
 ```
 
 - API base URL: `http://localhost:8000`
@@ -39,7 +39,7 @@ uvicorn app.main:app --reload
 - ReDoc docs: `http://localhost:8000/redoc`
 - Health check: `http://localhost:8000/health`
 
-`--reload` auto-restarts the server when code changes — keep it running while developing.
+> ⚠️ **On this machine, do NOT use `--reload` — it hangs.** Run the plain command above and restart the server manually after every backend edit.
 
 ## Using Swagger UI to test endpoints
 
@@ -61,7 +61,9 @@ pytest
 
 - Dev: SQLite file `orderkoi.db` (auto-created in `backend/`)
 - Delete it to reset all data: `rm orderkoi.db` (or delete in Explorer)
-- Production: PostgreSQL — switch via `.env` variable (built in Phase 8)
+- ⚠️ `Base.metadata.create_all` does **not** add columns to existing SQLite tables — schema changes to an existing dev DB need a manual `ALTER TABLE` (see `scripts/migrate.py`)
+- Free plan: one-time 15-order allowance, configured via `free_plan_orders` in `app/config.py` (defaults from `.env`)
+- Production: PostgreSQL — switch via `.env` variable (Phase 8b)
 
 ## Project layout
 
@@ -69,16 +71,23 @@ pytest
 backend/
 ├── app/
 │   ├── main.py        # FastAPI app, routes registration, CORS
-│   ├── config.py      # Settings from .env
+│   ├── config.py      # Settings from .env (incl. free_plan_orders = 15)
 │   ├── database.py    # DB engine & session
-│   ├── models.py      # SQLAlchemy models (Seller, Order)
+│   ├── email.py       # SMTP (starttls) with console fallback
+│   ├── models.py      # SQLAlchemy models (Seller, Order, UpgradeRequest, SubscriptionEvent)
 │   ├── schemas.py     # Pydantic request/response schemas
 │   ├── security.py    # Password hashing, JWT create/verify
+│   ├── utils.py       # Timezone helpers (Asia/Dhaka business time)
 │   └── routes/
-│       ├── auth.py    # /auth/signup, /auth/login, /auth/me
-│       ├── orders.py  # /orders CRUD + status changes
-│       └── tracking.py# /track/{code} — public
-├── tests/             # pytest tests (added in Phase 7)
+│       ├── auth.py    # /auth/* — signup, login, me, password reset, subscription-history, cancel-subscription
+│       ├── orders.py  # /orders CRUD + status changes + /orders/stats/summary (free-allowance gate)
+│       ├── tracking.py# /track/{code} — public
+│       ├── admin.py   # /admin/* — stats, sellers, upgrade requests, subscription events
+│       └── public.py  # /public/stores/{slug} — order form + is_accepting_orders
+├── scripts/
+│   ├── seed_admin.py  # Bootstrap an admin account
+│   └── migrate.py     # Manual SQLite schema migrations (ALTER TABLE)
+├── tests/             # pytest suite (147 tests)
 ├── requirements.txt
 ├── .env.example       # Template for secrets — copy to .env
 └── venv/              # Virtual environment (never commit)
@@ -90,5 +99,6 @@ backend/
 |---|---|
 | `python` not found | Reinstall Python with "Add to PATH" checked |
 | `ModuleNotFoundError` | Venv not activated, or `pip install -r requirements.txt` not run |
-| Port 8000 busy | `uvicorn app.main:app --reload --port 8001` |
+| Port 8000 busy | `uvicorn app.main:app --port 8001` |
+| `uvicorn --reload` hangs | Known on this machine — run without `--reload`, restart manually after edits |
 | `pip` slow | `pip install -r requirements.txt -i https://pypi.org/simple` |

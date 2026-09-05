@@ -217,8 +217,8 @@ falls back to Free limits.
 
 **We build:**
 - **Subscription card** on the dashboard (clickable → Settings):
-  - Pro: "⭐ Pro — unlimited orders until 1 Mar 2027" + days-remaining meter
-  - Free: live usage meter "32 / 50 orders this month" (turns amber at 80%, red at the limit)
+  - Pro: "⭐ Pro — unlimited orders until 1 Mar 2027" + a days-left meter
+  - Free: live one-time allowance meter ("N of 15 free orders used") — same footer-strip style as the Pro meter, amber past 75% used
   - Expired: "Your subscription ended <date> — you're back on Free limits"
 - **Custom date range**: a "Custom" tab beside Today/7d/30d/All with From → To date
   pickers (max one year, validated on both frontend and backend)
@@ -234,9 +234,7 @@ falls back to Free limits.
 ---
 
 ## Phase 7.12 — Subscription History (Admin Ledger)
-**Goal:** The admin always knows who subscribed, renewed or cancelled — and exactly when.
-
-**We build:**
+**Goal:** The admin always knows who subscribed, renewed or cancelled — and exactly when.**We build:**
 - **Subscription ledger** (`subscription_events` table): every plan change leaves a permanent entry
   - From approved upgrade requests: "Subscribed" (first time) or "Renewed" (extension), with the paid-for months
   - From seller cancellations: "Cancelled", marked "cancelled by seller"
@@ -248,6 +246,32 @@ falls back to Free limits.
 1. As a seller: request a Pro upgrade → as admin, approve it → as the seller again, cancel it
 2. Admin → Upgrade Requests → scroll to "Subscription history" → you see three moments in order: Subscribed, then Cancelled, with timestamps
 3. Try `/admin/subscription-events` while logged out or as a seller → 401/403
+
+---
+
+## Phase 7.13 — Free-Plan Allowance & Limit Experience ✅ (2026-09-05)
+**Goal:** A clear, professional free plan: sellers get a taste, then upgrade. Nobody is surprised.
+
+The free plan is a **one-time allowance of 15 orders** (not monthly). After it's used, the
+store is paused for new orders — dashboard AND public form — until the seller upgrades
+to Pro (unlimited). Existing data is never touched; cancelled orders return their unit
+to the allowance.
+
+**We build:**
+- Lifetime (not monthly) order count gates order creation: dashboard + public form → `402` with an upgrade message
+- `GET /stats/summary` returns the meter data (`month_orders` = lifetime used, `plan_limit` = 15 or `null` on Pro)
+- Free-order meter — one line (label · bar · remaining count) in the subscription card's footer strip; compact variant on the Orders page; amber past 75% used
+- Pro card uses the **same footer-strip meter** for days-left ("Pro active — N days left · expires …"), red inside the last week before expiry
+- Limit-reached: focused amber banner on Dashboard + Orders (seller), paused-store card on the public form (customer) — shown up front via `PublicStoreOut.is_accepting_orders`, and mid-fill on 402
+- `GET /auth/subscription-history` — the seller's own ledger in Settings (date + time); `SubscriptionEvent.request_id` dedupes "Approved" + "Pro activated" into one row
+- Admin overview: all six KPI cards follow the global date filter (window figures; all-time in the hints)
+
+**✅ You test it yourself:**
+1. Fresh seller → create 15 orders (dashboard or form) → 16th gets a clean upgrade prompt
+2. The customer form link now shows a "temporarily paused" card up front
+3. Log in as `demo.seller@example.com` (15/15) → see the banner; `meter.check@example.com` (12/15) → see the meter
+4. Upgrade to Pro → unlimited; the card shows the days-left footer strip (red near expiry: `expiring.pro@example.com`)
+5. Settings → subscription history shows one row per lifecycle moment (approved, cancelled, renewed)
 
 ---
 

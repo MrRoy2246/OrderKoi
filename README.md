@@ -15,7 +15,9 @@ OrderKoi is an order-tracking platform for small online sellers (F-commerce / Fa
 
 - 🏪 Seller dashboard: create & manage orders, update status
 - 🔗 Public tracking page: customer checks status via a link + tracking code
-- 📊 Analytics: order counts, status breakdown
+- 📝 Public order form: customers submit orders themselves — no login, no Messenger retyping
+- 📊 Analytics: order counts, status breakdown, revenue (all scoped by date range)
+- 💳 Free plan (15 orders, one time) → Pro (unlimited; 1/6/12 months, bKash/Nagad)
 - 🔐 Secure JWT authentication
 
 ## Tech Stack
@@ -35,16 +37,17 @@ OrderKoi is an order-tracking platform for small online sellers (F-commerce / Fa
 
 ## Status
 
-- [ ] Phase 0 — Setup & Scaffold
-- [ ] Phase 1 — Database & Seller Authentication (backend)
-- [ ] Phase 2 — Orders Core API (backend)
-- [ ] Phase 3 — Frontend Auth & App Shell
-- [ ] Phase 4 — Seller Dashboard: Order Management
-- [ ] Phase 5 — Public Tracking Page
-- [ ] Phase 6 — Analytics & Store Settings
-- [ ] Phase 7 — Testing & Hardening
-- [ ] Phase 7.5–7.7 — Admin Panel, Plans, Password Reset
-- [ ] Phase 7.8 — Public Order Form (customers order without any login)
-- [ ] Phase 7.9–7.10 — Dashboard date ranges, Pro durations & upgrade requests
-- [ ] Phase 7.11–7.12 — Subscription card, custom reports & admin subscription history
-- [ ] Phase 8 — Production Ready & Deployment
+- [x] Phase 0 — Setup & Scaffold
+- [x] Phase 1 — Database & Seller Authentication (backend)
+- [x] Phase 2 — Orders Core API (backend)
+- [x] Phase 3 — Frontend Auth & App Shell
+- [x] Phase 4 — Seller Dashboard: Order Management
+- [x] Phase 5 — Public Tracking Page
+- [x] Phase 6 — Analytics & Store Settings
+- [x] Phase 7 — Testing & Hardening (147/147 tests)
+- [x] Phase 7.5–7.7 — Admin Panel, Plans, Password Reset
+- [x] Phase 7.8 — Public Order Form (customers order without any login)
+- [x] Phase 7.9–7.10 — Dashboard date ranges, Pro durations & upgrade requests
+- [x] Phase 7.11–7.12 — Subscription card, custom reports & admin subscription history
+- [x] Phase 7.13 — Free-plan allowance (15 one-time), limit experience, seller history (2026-09-05)
+- [ ] Phase 8 — Production Ready & Deployment (next: SMTP → PostgreSQL → Docker)
