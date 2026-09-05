@@ -206,13 +206,27 @@ export default function AdminOverview() {
           <div className="card-header-row">
             <h3>Gross order value — last 12 months</h3>
           </div>
-          <MonthlyBars data={stats.revenue_monthly} valueLabel="GMV" />
+          <MonthlyBars
+            data={stats.revenue_monthly.map((m) => ({
+              key: m.month,
+              count: m.count,
+              value: m.value,
+            }))}
+            valueLabel="GMV"
+          />
         </section>
         <section className="card">
           <div className="card-header-row">
             <h3>New sellers — last 12 months</h3>
           </div>
-          <MonthlyBars data={stats.sellers_monthly} valueLabel="signups" />
+          <MonthlyBars
+            data={stats.sellers_monthly.map((m) => ({
+              key: m.month,
+              count: m.count,
+              value: 0,
+            }))}
+            valueLabel="signups"
+          />
         </section>
       </div>
 

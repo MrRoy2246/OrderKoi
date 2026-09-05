@@ -13,6 +13,7 @@ import { formatTk } from "../utils/orderStatus";
 
 /** Human label for a YYYY-MM month key. */
 function monthLabel(key, { short = true } = {}) {
+  if (!key) return "";
   const [year, month] = key.split("-").map(Number);
   return new Date(year, month - 1).toLocaleDateString(undefined, {
     month: short ? "short" : "long",
