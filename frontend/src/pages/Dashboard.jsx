@@ -6,7 +6,7 @@ import { BarChart, Sparkline } from "../components/Charts";
 import Icon from "../components/icons";
 import { SkeletonCard } from "../components/States";
 import StatusBreakdown from "../components/StatusBreakdown";
-import FreeLimitBanner, { FreeOrderPips } from "../components/FreeLimitBanner";
+import FreeLimitBanner, { FreeOrderMeter } from "../components/FreeLimitBanner";
 import { ordersLink } from "../utils/businessDate";
 import { formatTk, parseServerDate } from "../utils/orderStatus";
 
@@ -48,12 +48,11 @@ function SubscriptionCard({ seller, stats }) {
   const daysLeft = expiry ? Math.ceil((expiry - new Date()) / DAY_MS) : null;
   const active = pro && (!expiry || daysLeft > 0);
 
-  // Free-plan allowance (one-time, not monthly) — shown as pips while
-  // there's runway left; amber past 75% used. The full-limit banner
-  // handles the exhausted case, Pro shows nothing.
+  // Free-plan allowance (one-time, not monthly) — shown as a usage
+  // meter while there's runway left; amber past 75% used. The
+  // full-limit banner handles the exhausted case, Pro shows nothing.
   const limit = stats?.plan_limit ?? null;
   const used = stats?.month_orders ?? 0;
-  const remaining = Math.max(limit - used, 0);
   const showFreeMeter = !active && limit != null && used < limit && limit > 0;
 
   let headline, subline, meter;
@@ -96,15 +95,7 @@ function SubscriptionCard({ seller, stats }) {
             </span>
           </div>
         )}
-        {showFreeMeter && (
-          <div className="subscription-freemeter">
-            <FreeOrderPips limit={limit} used={used} />
-            <span className="subscription-freemeter-label">
-              {remaining === 1 ? "1 free order left" : `${remaining} free orders left`}{" "}
-              <span className="subscription-meter-detail">· {used} of {limit} used</span>
-            </span>
-          </div>
-        )}
+        {showFreeMeter && <FreeOrderMeter limit={limit} used={used} />}
       </div>
       <span className="subscription-action" aria-hidden="true">
         {active ? "Manage / renew" : "Upgrade to Pro"}

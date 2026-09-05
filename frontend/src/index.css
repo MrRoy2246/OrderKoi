@@ -540,52 +540,107 @@ textarea {
   flex-wrap: wrap;
 }
 
-/* Segmented pips — one per free order. Filled = spent; the hollow
-   ones are what's left. Recessive hollows, vermilion fills; the whole
-   strip turns amber past 75% used (a nudge, not an alarm). */
-.free-pips {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
+/* Refined free-order usage meter — a slim bar with hairline tick
+   marks, gradient fill, and a right-aligned "N left" chip. The same
+   component scales down to a compact row for the Orders page. */
+.free-meter {
+  max-width: 420px;
 }
 
-.free-pip {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
+.free-meter-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  gap: 10px;
+}
+
+.free-meter-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.free-meter-chip {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
   background: var(--surface-sunken);
-  box-shadow: inset 0 0 0 1px var(--border-strong);
+  border: 1px solid var(--border);
+  padding: 2px 9px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
 }
 
-.free-pip--filled {
-  background: var(--primary);
-  box-shadow: none;
+.free-meter--warn .free-meter-chip {
+  color: #8a5506;
+  background: var(--warning-tint);
+  border-color: rgba(232, 147, 12, 0.3);
 }
 
-.free-pips--warn .free-pip--filled {
-  background: var(--warning);
+.free-meter-track {
+  position: relative;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  box-shadow: inset 0 1px 2px rgba(28, 25, 23, 0.06);
+  overflow: hidden;
 }
 
-/* Slight stagger so the strip feels alive without animating forever */
-.free-pip--filled {
-  animation: pip-pop 300ms cubic-bezier(0.2, 0.8, 0.3, 1.4) both;
+.free-meter-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, #f9773e, var(--primary));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: width 400ms cubic-bezier(0.25, 0.7, 0.3, 1);
 }
 
-@keyframes pip-pop {
-  from { transform: scale(0.5); opacity: 0.4; }
-  to { transform: scale(1); opacity: 1; }
+.free-meter--warn .free-meter-fill {
+  background: linear-gradient(90deg, #f0a93b, var(--warning));
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .free-pip--filled {
-    animation: none;
-  }
+/* Hairline ticks at every 5th order — orientation, not a grid */
+.free-meter-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(28, 25, 23, 0.1);
 }
 
-.free-allowance-detail {
+.free-meter-tick--passed {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.free-meter-note {
+  display: block;
+  margin-top: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.free-meter-note-detail {
   color: var(--muted);
   font-weight: 500;
+}
+
+/* Compact variant — the Orders-page row: smaller track, inline note */
+.free-meter--compact {
+  max-width: none;
+  flex: 1;
+  min-width: 160px;
+}
+
+.free-meter--compact .free-meter-track {
+  height: 6px;
+}
+
+.free-meter--compact .free-meter-note {
+  margin-top: 4px;
+  font-size: 12px;
 }
 
 .free-allowance-note a {
@@ -1927,25 +1982,6 @@ textarea {
 .subscription-meter {
   margin-top: 8px;
   max-width: 420px;
-}
-
-/* Free-allowance pips inside the subscription card — slightly larger
-   pips than the Orders-page note, label underneath */
-.subscription-freemeter {
-  margin-top: 10px;
-}
-
-.subscription-freemeter .free-pip {
-  width: 12px;
-  height: 12px;
-}
-
-.subscription-freemeter-label {
-  display: block;
-  margin-top: 6px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text);
 }
 
 .subscription-meter-track {

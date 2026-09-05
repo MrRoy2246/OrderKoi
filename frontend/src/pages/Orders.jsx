@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api, getErrorMessage } from "../api/client";
 import Icon from "../components/icons";
 import OrderFormModal from "../components/OrderFormModal";
-import FreeLimitBanner, { FreeOrderPips } from "../components/FreeLimitBanner";
+import FreeLimitBanner, { FreeOrderMeter } from "../components/FreeLimitBanner";
 import { EmptyState, SkeletonRows } from "../components/States";
 import StatusBadge from "../components/StatusBadge";
 import useMediaQuery from "../utils/useMediaQuery";
@@ -275,15 +275,7 @@ export default function Orders() {
           the focused banner above once the limit is hit */}
       {planStats?.plan_limit != null && planStats.month_orders < planStats.plan_limit && (
         <div className="free-allowance-note" role="status">
-          <FreeOrderPips limit={planStats.plan_limit} used={planStats.month_orders} />
-          <span>
-            {planStats.plan_limit - planStats.month_orders === 1
-              ? "1 free order left"
-              : `${planStats.plan_limit - planStats.month_orders} free orders left`}
-            <span className="free-allowance-detail">
-              {" "}({planStats.month_orders} of {planStats.plan_limit} used)
-            </span>
-          </span>
+          <FreeOrderMeter limit={planStats.plan_limit} used={planStats.month_orders} compact />
           <Link to="/dashboard/settings">Upgrade to Pro</Link>
         </div>
       )}
