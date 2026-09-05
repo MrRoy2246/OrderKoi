@@ -296,13 +296,16 @@ export default function AdminOverview() {
             .filter((m) => m.count > 0)
             .map((m) => ({ key: m.key, value: Math.round((m.value / m.count) * 100) / 100 }));
   const monthName = new Date().toLocaleDateString(undefined, { month: "long" });
+  // New signups over the chart's actual series — the meta line must
+  // describe what's plotted, not a fixed 30-day pulse
+  const newSellersInSeries = stats.sellers_monthly.reduce((sum, m) => sum + m.count, 0);
 
   const filterLabel = rangeLabel(range, custom);
   const windowLabel =
     range === "custom" && !custom ? "last 30 days" : filterLabel.toLowerCase();
-  // Monthly money charts: an explicit range scopes them; rolling
+  // Monthly money + growth charts: an explicit range scopes them; rolling
   // presets (the default) keep the trailing 12 months
-  const revenueChartScope = custom ? rangeLabel(range, custom) : "last 12 months";
+  const chartScope = custom ? rangeLabel(range, custom) : "last 12 months";
 
   return (
     <div className={`admin-page${statsFetching ? " admin-page--refetching" : ""}`}>
@@ -407,7 +410,7 @@ export default function AdminOverview() {
       <div className="admin-chart-grid admin-chart-grid--revenue">
         <ChartCard
           title="Platform revenue"
-          meta={`${formatTk(stats.subscription_revenue_total)} · ${revenueChartScope}`}
+          meta={`${formatTk(stats.subscription_revenue_total)} · ${chartScope}`}
           footer={`From ${stats.pro_sellers} active Pro seller${stats.pro_sellers === 1 ? "" : "s"} · free (comp) grants excluded`}
         >
           <BarChart
@@ -419,7 +422,7 @@ export default function AdminOverview() {
 
         <ChartCard
           title="Seller income"
-          meta={`${formatTk(stats.platform_revenue)} · ${revenueChartScope}`}
+          meta={`${formatTk(stats.platform_revenue)} · ${chartScope}`}
           tabs={[
             { value: "revenue", label: "Revenue" },
             { value: "orders", label: "Orders" },
@@ -470,7 +473,7 @@ export default function AdminOverview() {
       <div className="admin-chart-grid">
         <ChartCard
           title="Seller growth"
-          meta={`${stats.new_sellers_30d} new in the last 30 days`}
+          meta={`${newSellersInSeries} new seller${newSellersInSeries === 1 ? "" : "s"} · ${chartScope}`}
         >
           <BarChart
             data={stats.sellers_monthly.map((m) => ({ key: m.month, value: m.count }))}
