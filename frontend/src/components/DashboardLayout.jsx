@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import usePendingRequests from "../utils/usePendingRequests";
 import Icon from "./icons";
 import Logo from "./Logo";
 
@@ -25,7 +26,7 @@ const ADMIN_NAV_GROUPS = [
   },
 ];
 
-function NavLinks({ items, onNavigate }) {
+function NavLinks({ items, badge, onNavigate }) {
   return items.map((item) => (
     <NavLink
       key={item.to}
@@ -38,11 +39,16 @@ function NavLinks({ items, onNavigate }) {
         <Icon name={item.icon} size={19} />
       </span>
       {item.label}
+      {item.to === "/admin/requests" && badge > 0 && (
+        <span className="sidebar-badge" aria-label={`${badge} pending`}>
+          {badge > 9 ? "9+" : badge}
+        </span>
+      )}
     </NavLink>
   ));
 }
 
-function SidebarBody({ isAdmin, seller, onLogout, onNavigate }) {
+function SidebarBody({ isAdmin, seller, pendingRequests, onLogout, onNavigate }) {
   return (
     <>
       <div className="sidebar-brand">
@@ -55,7 +61,7 @@ function SidebarBody({ isAdmin, seller, onLogout, onNavigate }) {
           ADMIN_NAV_GROUPS.map((group) => (
             <div key={group.heading} className="sidebar-group">
               <span className="sidebar-group-heading">{group.heading}</span>
-              <NavLinks items={group.items} onNavigate={onNavigate} />
+              <NavLinks items={group.items} badge={pendingRequests} onNavigate={onNavigate} />
             </div>
           ))
         ) : (
@@ -93,6 +99,7 @@ export default function DashboardLayout() {
   const drawerRef = useRef(null);
 
   const isAdmin = seller?.role === "admin";
+  const pendingRequests = usePendingRequests();
 
   function handleLogout() {
     logout();
@@ -118,7 +125,12 @@ export default function DashboardLayout() {
     <div className="app-shell">
       {/* Desktop sidebar */}
       <aside className="sidebar">
-        <SidebarBody isAdmin={isAdmin} seller={seller} onLogout={handleLogout} />
+        <SidebarBody
+          isAdmin={isAdmin}
+          seller={seller}
+          pendingRequests={pendingRequests}
+          onLogout={handleLogout}
+        />
       </aside>
 
       {/* Mobile top bar */}
@@ -135,6 +147,30 @@ export default function DashboardLayout() {
         </button>
         <Logo size={26} withWordmark />
         <span className="topbar-spacer" aria-hidden="true" />
+        {isAdmin && (
+          <button
+            type="button"
+            className={`topbar-bell${pendingRequests > 0 ? " topbar-bell--active" : ""}`}
+            onClick={() => navigate("/admin/requests")}
+            aria-label={
+              pendingRequests > 0
+                ? `${pendingRequests} pending upgrade request${pendingRequests === 1 ? "" : "s"} — review`
+                : "No pending requests"
+            }
+            title={
+              pendingRequests > 0
+                ? `${pendingRequests} pending request${pendingRequests === 1 ? "" : "s"}`
+                : "No pending requests"
+            }
+          >
+            <Icon name="bell" size={20} />
+            {pendingRequests > 0 && (
+              <span className="topbar-bell-count">
+                {pendingRequests > 9 ? "9+" : pendingRequests}
+              </span>
+            )}
+          </button>
+        )}
       </header>
 
       {/* Mobile drawer */}
@@ -161,6 +197,7 @@ export default function DashboardLayout() {
             <SidebarBody
               isAdmin={isAdmin}
               seller={seller}
+              pendingRequests={pendingRequests}
               onLogout={handleLogout}
               onNavigate={closeDrawer}
             />

@@ -947,6 +947,99 @@ textarea {
   flex: 1;
 }
 
+/* Pending-request badge — sits on the "Upgrade Requests" nav item and
+   the mobile topbar bell. Vermilion on tint, so it reads as the
+   platform's "needs you" color without being an alarm red. */
+.sidebar-badge {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--primary);
+  background: var(--primary-tint-strong, var(--primary-tint));
+  border: 1px solid rgba(232, 89, 12, 0.28);
+  border-radius: var(--radius-pill);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* Mobile topbar bell */
+.topbar-bell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+
+.topbar-bell:hover {
+  background: var(--surface-sunken);
+  color: var(--text);
+}
+
+.topbar-bell--active {
+  color: var(--primary);
+}
+
+/* A quiet attention pulse — two beats, then still (animation-iteration-
+   count 2, not infinite: professional, not nagging) */
+.topbar-bell--active .topbar-bell-count {
+  animation: bell-pulse 1.2s ease-out 2;
+}
+
+@keyframes bell-pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.35);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topbar-bell--active .topbar-bell-count {
+    animation: none;
+  }
+}
+
+.topbar-bell-count {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  color: #fff;
+  background: var(--primary);
+  border-radius: var(--radius-pill);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
 /* Mobile drawer */
 .drawer-root {
   position: fixed;
