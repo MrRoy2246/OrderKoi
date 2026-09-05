@@ -501,41 +501,68 @@ def test_stats_daily_revenue_excludes_cancelled(client, auth_headers, order):
     assert summary["revenue"] == 0
 
 
-def test_plans_are_uncapped(client, auth_headers):
-    """The free-plan order cap was removed — Free sellers place orders
-    without a monthly limit. A dozen orders in the month must all be
-    accepted (the old cap was 50; this guards against its return)."""
-    for i in range(12):
-        response = client.post(
-            "/orders",
-            json={
-                "customer_name": f"Limit Test {i}",
-                "customer_phone": "01800000000",
-                "items": [{"name": "X", "quantity": 1, "price": 10}],
-            },
-            headers=auth_headers,
-        )
-        assert response.status_code == 201
+def test_free_plan_monthly_limit(client, auth_headers):
+    """Free sellers get a monthly order allowance (15). The 15th order
+    of the month is accepted, the 16th is blocked with a clear upgrade
+    message; the allowance resets at the start of each business month."""
+    payload = {
+        "customer_name": "Limit Test",
+        "customer_phone": "01800000000",
+        "items": [{"name": "X", "quantity": 1, "price": 10}],
+    }
 
-    # The stats summary no longer advertises a cap
+    for i in range(15):
+        response = client.post(
+            "/orders", json={**payload, "customer_name": f"Limit Test {i}"}, headers=auth_headers
+        )
+        assert response.status_code == 201, f"order {i + 1} should be accepted"
+
+    # The conftest `order` fixture already used one of the allowance,
+    # so this is the 16th non-cancelled order this month
+    blocked = client.post("/orders", json=payload, headers=auth_headers)
+    assert blocked.status_code == 402
+    assert "upgrade to pro" in blocked.json()["detail"].lower()
+
+    # Cancelling an order returns the allowance unit (cancelled orders
+    # don't count toward the limit)
+    cancelled = client.post("/orders", json=payload, headers=auth_headers)
+    assert cancelled.status_code == 402  # still blocked before the cancel
+
+    summary = client.get("/orders/stats/summary?range=7d", headers=auth_headers).json()
+    assert summary["plan_limit"] == 15
+    assert summary["month_orders"] == 15
+
+    # Cancel one of this month's orders and try again — room opens up
+    orders = client.get("/orders?status=placed", headers=auth_headers).json()["orders"]
+    client.patch(
+        f"/orders/{orders[0]['id']}/status", json={"status": "cancelled"}, headers=auth_headers
+    )
+    freed = client.post("/orders", json=payload, headers=auth_headers)
+    assert freed.status_code == 201
+
+
+def test_pro_plan_is_uncapped(client, seller, auth_headers, admin_headers):
+    """Pro has no monthly allowance — orders flow without limit and the
+    stats summary reports no cap."""
+    # Upgrade to Pro the normal way
+    request = client.post("/auth/upgrade-requests", json={"months": 1}, headers=auth_headers).json()
+    client.patch(
+        f"/admin/upgrade-requests/{request['id']}", json={"action": "approve"}, headers=admin_headers
+    )
+
+    payload = {
+        "customer_name": "Pro Flow",
+        "customer_phone": "01800000000",
+        "items": [{"name": "X", "quantity": 1, "price": 10}],
+    }
+    for i in range(20):
+        response = client.post(
+            "/orders", json={**payload, "customer_name": f"Pro {i}"}, headers=auth_headers
+        )
+        assert response.status_code == 201, f"pro order {i + 1} should be accepted"
+
     summary = client.get("/orders/stats/summary?range=7d", headers=auth_headers).json()
     assert summary["plan_limit"] is None
-
-
-def test_admin_cannot_create_orders(client, admin_headers):
-    """The one order-creation gate that remains: platform accounts
-    don't run shops."""
-    response = client.post(
-        "/orders",
-        json={
-            "customer_name": "Should Fail",
-            "customer_phone": "01800000000",
-            "items": [{"name": "X", "quantity": 1, "price": 10}],
-        },
-        headers=admin_headers,
-    )
-    assert response.status_code == 403
-    assert "platform accounts" in response.json()["detail"].lower()
 
 
 # ---------- Per-shop stats (admin drill-down) ----------

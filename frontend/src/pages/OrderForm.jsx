@@ -127,7 +127,17 @@ export default function OrderForm() {
       setConfirmation(result);
       window.scrollTo(0, 0);
     } catch (err) {
-      setError(getErrorMessage(err, "Could not place your order. Please try again."));
+      // 402 = the store hit its free-plan monthly allowance — the
+      // customer can't fix that, so soften the message (the seller
+      // got a clear error on their side and an email nudge)
+      if (err?.status === 402) {
+        setError(
+          "This store can't receive new orders right now. " +
+            "Please contact the seller directly — they'll sort it out quickly."
+        );
+      } else {
+        setError(getErrorMessage(err, "Could not place your order. Please try again."));
+      }
     } finally {
       setSubmitting(false);
     }

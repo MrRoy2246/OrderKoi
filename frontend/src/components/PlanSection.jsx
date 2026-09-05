@@ -11,10 +11,20 @@ const PAYMENT_INSTRUCTIONS =
   "the request below with your transaction ID. We'll activate Pro after " +
   "verifying the payment (usually within a few hours).";
 
+/** Must match the backend's free_plan_monthly_orders setting. */
+const FREE_MONTHLY_ORDERS = 15;
+
 const STATUS_LABELS = {
   pending: { text: "Pending review", className: "upgrade-status--pending" },
   approved: { text: "Approved", className: "upgrade-status--approved" },
   rejected: { text: "Rejected", className: "upgrade-status--rejected" },
+};
+
+/** Subscription ledger events, phrased for the seller's own history. */
+const EVENT_LABELS = {
+  subscribed: { text: "Pro activated", className: "upgrade-status--approved" },
+  renewed: { text: "Pro renewed", className: "upgrade-status--approved" },
+  cancelled: { text: "Pro cancelled", className: "upgrade-status--rejected" },
 };
 
 function formatDate(value) {
@@ -33,6 +43,7 @@ export default function PlanSection() {
   const { seller, refresh } = useAuth();
 
   const [requests, setRequests] = useState([]);
+  const [events, setEvents] = useState([]);
   const [selected, setSelected] = useState(1);
   const [paymentRef, setPaymentRef] = useState("");
   const [loading, setLoading] = useState(true);
@@ -47,6 +58,10 @@ export default function PlanSection() {
       .then(setRequests)
       .catch(() => setRequests([]))
       .finally(() => setLoading(false));
+    api.auth
+      .subscriptionHistory()
+      .then(setEvents)
+      .catch(() => setEvents([]));
   }, []);
 
   useEffect(() => {
@@ -58,6 +73,32 @@ export default function PlanSection() {
     seller?.plan === "pro" &&
     (!seller?.plan_expires_at || new Date(seller.plan_expires_at) > new Date());
   const chosen = PRO_OPTIONS.find((o) => o.months === selected);
+
+  // One timeline: upgrade requests + subscription events (activation,
+  // renewal, cancellation), newest first. IDs are namespaced so React
+  // never reuses a key across the two kinds of rows.
+  const history = [
+    ...requests.map((r) => ({
+      key: `request-${r.id}`,
+      when: r.handled_at || r.created_at,
+      left: `${r.months} month${r.months === 1 ? "" : "s"}`,
+      status: STATUS_LABELS[r.status] ?? STATUS_LABELS.pending,
+      date: r.handled_at || r.created_at,
+    })),
+    ...events.map((e) => {
+      const label = EVENT_LABELS[e.event] ?? {
+        text: e.event,
+        className: "upgrade-status--pending",
+      };
+      return {
+        key: `event-${e.id}`,
+        when: e.created_at,
+        left: e.months ? `${e.months} month${e.months === 1 ? "" : "s"}` : label.text,
+        status: label,
+        date: e.created_at,
+      };
+    }),
+  ].sort((a, b) => new Date(b.when) - new Date(a.when));
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -92,7 +133,7 @@ export default function PlanSection() {
     const confirmed = window.confirm(
       "Cancel your Pro subscription?\n\n" +
         "• Your Pro status ends immediately\n" +
-        "• Your account stays on the Free plan (orders keep working, unlimited)\n" +
+        `• Your account returns to the Free plan (${FREE_MONTHLY_ORDERS} orders per month)\n` +
         "• Payments already made are not refunded automatically — contact support if needed\n\n" +
         "If you just don't want to renew, you can simply do nothing instead."
     );
@@ -139,7 +180,9 @@ export default function PlanSection() {
           )}
         </div>
         <span className="plan-limit-note">
-          {proActive ? "Supporting the platform" : "Unlimited orders"}
+          {proActive
+            ? "Unlimited orders"
+            : `Free plan — ${FREE_MONTHLY_ORDERS} orders/month, unlimited on Pro`}
         </span>
       </div>
 
@@ -227,22 +270,19 @@ export default function PlanSection() {
         </p>
       )}
 
-      {!loading && requests.length > 0 && (
+      {!loading && history.length > 0 && (
         <div className="upgrade-history">
-          <h4>Request history</h4>
+          <h4>Subscription history</h4>
           <ul className="upgrade-history-list">
-            {requests.map((request) => {
-              const meta = STATUS_LABELS[request.status] ?? STATUS_LABELS.pending;
-              return (
-                <li key={request.id}>
-                  <span>{request.months} month{request.months === 1 ? "" : "s"}</span>
-                  <span className={`upgrade-status ${meta.className}`}>{meta.text}</span>
-                  <span className="upgrade-history-date">
-                    {formatDate(request.handled_at || request.created_at)}
-                  </span>
-                </li>
-              );
-            })}
+            {history.map((entry) => (
+              <li key={entry.key}>
+                <span>{entry.left}</span>
+                <span className={`upgrade-status ${entry.status.className}`}>
+                  {entry.status.text}
+                </span>
+                <span className="upgrade-history-date">{formatDate(entry.date)}</span>
+              </li>
+            ))}
           </ul>
         </div>
       )}

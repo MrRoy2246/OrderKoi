@@ -21,6 +21,7 @@ from app.schemas import (
     SellerLogin,
     SellerOut,
     SellerUpdate,
+    SubscriptionEventOut,
     Token,
     UpgradeRequestCreate,
     UpgradeRequestOut,
@@ -276,6 +277,26 @@ def my_upgrade_requests(
     )
 
 
+@router.get(
+    "/subscription-history",
+    response_model=list[SubscriptionEventOut],
+    summary="My subscription history (activations, renewals, cancellations)",
+)
+def my_subscription_history(
+    seller: Seller = Depends(get_current_seller),
+    db: Session = Depends(get_db),
+) -> list[SubscriptionEvent]:
+    """The seller-side view of the ledger: every Pro activation,
+    renewal and cancellation on this account, newest first. The admin
+    sees the same events platform-wide; sellers see only their own."""
+    return (
+        db.query(SubscriptionEvent)
+        .filter(SubscriptionEvent.seller_id == seller.id)
+        .order_by(SubscriptionEvent.created_at.desc(), SubscriptionEvent.id.desc())
+        .all()
+    )
+
+
 @router.post(
     "/cancel-subscription",
     response_model=SellerOut,
@@ -287,7 +308,7 @@ def cancel_subscription(
 ) -> Seller:
     """Seller-initiated cancellation: Pro ends right away (no refund —
     manual bKash/Nagad payments are handled case by case) and the
-    account drops back to the Free plan's monthly order cap."""
+    account drops back to the Free plan's monthly order allowance."""
     if seller.role == "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -302,7 +323,8 @@ def cancel_subscription(
     seller.plan = "free"
     seller.plan_expires_at = None
 
-    # Ledger: the admin sees exactly who cancelled and when
+    # Ledger: the admin sees exactly who cancelled and when — and the
+    # seller's own Settings history shows it too (via /subscription-history)
     db.add(
         SubscriptionEvent(
             seller_id=seller.id,
@@ -322,7 +344,7 @@ def cancel_subscription(
             body=(
                 "A seller cancelled their Pro subscription.\n\n"
                 f"Store: {seller.store_name} ({seller.email})\n"
-                "The account is back on the Free plan.\n\n"
+                "The account is back on the Free plan (15 orders/month).\n\n"
                 "Might be worth a friendly check-in to see what went wrong.\n\n"
                 "— OrderKoi"
             ),

@@ -24,6 +24,7 @@ from app.routes.orders import (
     _generate_tracking_code,
     _initial_history,
     _insert_order_with_retry,
+    _check_plan_limit,
 )
 from app.schemas import PublicOrderCreate, PublicOrderCreated, PublicStoreOut
 
@@ -73,6 +74,7 @@ def submit_order(
     db: Session = Depends(get_db),
 ) -> PublicOrderCreated:
     seller = _get_store(slug, db)
+    _check_plan_limit(seller, db)
 
     items = [item.model_dump() for item in payload.items]
     total = _compute_total(items)

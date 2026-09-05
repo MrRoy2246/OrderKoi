@@ -17,9 +17,10 @@ from sqlalchemy import case, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import get_db
 from app.deps import get_current_seller
-from app.models import Order, OrderStatus, Seller, VALID_TRANSITIONS, utcnow
+from app.models import Order, OrderStatus, Seller, VALID_TRANSITIONS, pro_plan_active, utcnow
 from app.schemas import (
     DailyValue,
     OrderCreate,
@@ -38,6 +39,8 @@ from app.timezone import (
 )
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+
+settings = get_settings()
 
 
 def _generate_tracking_code() -> str:
@@ -117,15 +120,28 @@ def _month_order_count(seller: Seller, db: Session) -> int:
     )
 
 
-def _check_plan_limit(seller: Seller, db: Session) -> None:  # noqa: ARG001
-    """Admin accounts are platform accounts, not shops — only they are
-    blocked from creating orders. Plans themselves are uncapped: the
-    admin can comp Pro time, and Free sellers aren't throttled."""
+def _check_plan_limit(seller: Seller, db: Session) -> None:
+    """Free plan: a monthly order allowance (business month — resets at
+    local midnight on the 1st). Pro is unlimited; admins don't place
+    orders at all (their accounts are platform accounts, not shops)."""
     if seller.role == "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin accounts are platform accounts — they don't place orders. "
             "Log in with a seller account to manage orders.",
+        )
+    if pro_plan_active(seller):
+        return
+
+    used = _month_order_count(seller, db)
+    if used >= settings.free_plan_monthly_orders:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=(
+                f"You've used all {settings.free_plan_monthly_orders} free orders this month. "
+                "Upgrade to Pro for unlimited orders — "
+                f"or wait for the reset on {month_start_utc() + timedelta(days=31):%B 1, %Y}."
+            ),
         )
 
 
@@ -460,9 +476,10 @@ def stats_summary(
         "status_counts": status_counts,
         "daily": daily,
         "month_orders": _month_order_count(seller, db),
-        # Plans are uncapped — kept in the response for frontend
-        # compatibility; None means "no monthly limit"
-        "plan_limit": None,
+        # Free plan allowance this month (Pro sellers see null = unlimited)
+        "plan_limit": None
+        if pro_plan_active(seller) or seller.role == "admin"
+        else settings.free_plan_monthly_orders,
     }
 
 

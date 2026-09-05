@@ -177,12 +177,38 @@ def test_submit_order_isolated_between_stores(client, seller, form_payload, auth
     assert orders.json()["total"] == 0
 
 
-# ---------- Plan limits (removed: plans are uncapped) ----------
+# ---------- Free-plan allowance (15/month, unlimited on Pro) ----------
 
-def test_submit_order_uncapped_for_free(client, seller, form_payload):
-    """The free-plan cap was removed — a Free store's form keeps
-    accepting submissions no matter how many came this month."""
+def test_submit_order_within_monthly_allowance(client, seller, form_payload):
+    """Free stores keep accepting form submissions inside the monthly
+    allowance — a healthy store never notices it."""
     slug = seller["store_slug"]
-    for _ in range(5):
+    for i in range(5):
         response = client.post(f"/public/stores/{slug}/orders", json=form_payload)
         assert response.status_code == 201
+
+
+def test_submit_order_blocked_after_allowance(client, seller, auth_headers, form_payload):
+    """A Free store's form goes quiet for customers once the monthly
+    allowance is used up — 402, with a professional message."""
+    slug = seller["store_slug"]
+    # The conftest `seller` fixture has no orders yet — use all 15
+    for _ in range(15):
+        response = client.post(f"/public/stores/{slug}/orders", json=form_payload)
+        assert response.status_code == 201
+
+    blocked = client.post(f"/public/stores/{slug}/orders", json=form_payload)
+    assert blocked.status_code == 402
+    assert "upgrade" in blocked.json()["detail"].lower()
+
+    # The seller's dashboard creation is gated too (same allowance)
+    dashboard = client.post(
+        "/orders",
+        json={
+            "customer_name": "Dashboard Too",
+            "customer_phone": "01800000000",
+            "items": [{"name": "X", "quantity": 1, "price": 10}],
+        },
+        headers=auth_headers,
+    )
+    assert dashboard.status_code == 402

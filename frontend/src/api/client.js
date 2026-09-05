@@ -184,6 +184,8 @@ export const api = {
         body: JSON.stringify({ token, new_password: newPassword }),
       }),
     upgradeRequests: () => request("/auth/upgrade-requests"),
+    // My subscription events — activations, renewals, cancellations
+    subscriptionHistory: () => request("/auth/subscription-history"),
     requestUpgrade: (payload) =>
       request("/auth/upgrade-requests", {
         method: "POST",

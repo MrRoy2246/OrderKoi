@@ -30,8 +30,10 @@ class Settings(BaseSettings):
     # (Asia/Dhaka: their day flips at local midnight, not 6am UTC)
     app_timezone: str = "Asia/Dhaka"
 
-    # Subscriptions — plans are uncapped (Pro is comped via the admin
-    # panel; Free sellers are not throttled)
+    # Subscriptions — Free sellers get a generous monthly allowance
+    # (a month is a full billing cycle to try the platform), Pro is
+    # unlimited. Admin-comped Pro is the override path.
+    free_plan_monthly_orders: int = 15
 
     # Password reset
     frontend_url: str = "http://localhost:5173"

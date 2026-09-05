@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, getErrorMessage } from "../api/client";
 import Icon from "./icons";
 import QtyStepper from "./QtyStepper";
@@ -18,6 +19,7 @@ export default function OrderFormModal({ onClose, onCreated }) {
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState([{ ...EMPTY_ITEM }]);
   const [error, setError] = useState(null);
+  const [limitReached, setLimitReached] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const total = useMemo(
@@ -86,7 +88,13 @@ export default function OrderFormModal({ onClose, onCreated }) {
       });
       onCreated(order);
     } catch (err) {
-      setError(getErrorMessage(err, "Could not create the order. Please try again."));
+      // 402 = free-plan monthly allowance used up — point at Pro
+      if (err?.status === 402) {
+        setLimitReached(true);
+        setError(null);
+      } else {
+        setError(getErrorMessage(err, "Could not create the order. Please try again."));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -111,6 +119,25 @@ export default function OrderFormModal({ onClose, onCreated }) {
         {/* The form body scrolls on short screens; header + buttons stay
             pinned via the flex layout on .modal (see CSS). The submit
             button lives outside the form but is linked via the form attr. */}
+        {limitReached ? (
+          <div className="modal-form">
+            <div className="alert alert--error" role="alert">
+              <strong>Monthly free order limit reached</strong>
+              <p style={{ margin: "6px 0 0" }}>
+                The Free plan includes 15 orders per month. Upgrade to Pro for
+                unlimited orders — your existing orders and data stay exactly
+                as they are.
+              </p>
+            </div>
+            <div className="modal-actions" style={{ justifyContent: "center" }}>
+              <Link to="/dashboard/settings" className="button button--primary" onClick={onClose}>
+                <Icon name="sparkles" size={16} />
+                Upgrade to Pro
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <>
         <form id="new-order-form" className="modal-form" onSubmit={handleSubmit} noValidate>
           <div className="form-row">
             <div className="field">
@@ -230,18 +257,22 @@ export default function OrderFormModal({ onClose, onCreated }) {
             />
           </div>
         </form>
+          </>
+        )}
 
-        <div className="modal-actions">
-          <button type="button" className="button button--outline" onClick={onClose} disabled={submitting}>
-            Cancel
-          </button>
-          {/* form="new-order-form" keeps this outside the scrollable body
-              while still submitting that form */}
-          <button type="submit" form="new-order-form" className="button button--primary" disabled={submitting}>
-            <Icon name="check" size={16} />
-            {submitting ? "Creating…" : "Create order"}
-          </button>
-        </div>
+        {limitReached ? null : (
+          <div className="modal-actions">
+            <button type="button" className="button button--outline" onClick={onClose} disabled={submitting}>
+              Cancel
+            </button>
+            {/* form="new-order-form" keeps this outside the scrollable body
+                while still submitting that form */}
+            <button type="submit" form="new-order-form" className="button button--primary" disabled={submitting}>
+              <Icon name="check" size={16} />
+              {submitting ? "Creating…" : "Create order"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

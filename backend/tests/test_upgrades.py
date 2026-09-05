@@ -210,9 +210,9 @@ def test_renewal_stacks_on_active_subscription(client, seller, auth_headers, adm
     assert timedelta(days=27) < added < timedelta(days=35)
 
 
-def test_expired_pro_back_on_free_but_uncapped(client, auth_headers):
-    """Pro with a past expiry date is effectively Free again — but
-    Free is no longer throttled, so orders still flow."""
+def test_expired_pro_back_on_free_with_allowance(client, auth_headers):
+    """Pro with a past expiry date is effectively Free again — and Free
+    carries the monthly allowance, so order 16 of the month is held."""
     from datetime import datetime, timezone
 
     from app.models import Seller
@@ -231,7 +231,8 @@ def test_expired_pro_back_on_free_but_uncapped(client, auth_headers):
     finally:
         db.close()
 
-    # Expired Pro = Free, and Free is uncapped — the order is accepted
+    # Expired Pro = Free with its 15-order allowance — the 2nd order
+    # this month (conftest fixture made the 1st) is accepted
     response = client.post(
         "/orders",
         json={
@@ -242,6 +243,8 @@ def test_expired_pro_back_on_free_but_uncapped(client, auth_headers):
         headers=auth_headers,
     )
     assert response.status_code == 201
+    summary = client.get("/orders/stats/summary", headers=auth_headers).json()
+    assert summary["plan_limit"] == 15
 
 
 # ---------- Cancellation ----------
@@ -280,6 +283,63 @@ def test_cancel_requires_authentication(client):
 def get_events(client, admin_headers, seller_id):
     events = client.get("/admin/subscription-events", headers=admin_headers).json()
     return [e for e in events if e["seller_id"] == seller_id]
+
+
+def test_seller_sees_own_history_in_settings(client, seller, auth_headers, admin_headers):
+    """Cancellations (and activations/renewals) surface in the seller's
+    own Settings history — not just the admin ledger."""
+    # Subscribe, renew, then cancel — the full lifecycle
+    first = client.post("/auth/upgrade-requests", json={"months": 6}, headers=auth_headers).json()
+    client.patch(
+        f"/admin/upgrade-requests/{first['id']}", json={"action": "approve"}, headers=admin_headers
+    )
+    second = client.post("/auth/upgrade-requests", json={"months": 1}, headers=auth_headers).json()
+    client.patch(
+        f"/admin/upgrade-requests/{second['id']}", json={"action": "approve"}, headers=admin_headers
+    )
+    client.post("/auth/cancel-subscription", headers=auth_headers)
+
+    history = client.get("/auth/subscription-history", headers=auth_headers)
+    assert history.status_code == 200
+    events = history.json()
+    # Newest first: cancelled, renewed, subscribed
+    assert [e["event"] for e in events] == ["cancelled", "renewed", "subscribed"]
+    assert events[0]["note"] == "cancelled by seller"
+    assert events[1]["months"] == 1
+    # The seller view mirrors the admin ledger for their own account
+    admin_view = get_events(client, admin_headers, seller["id"])
+    assert [e["event"] for e in admin_view] == [e["event"] for e in events]
+
+
+def test_subscription_history_scoped_to_self(client, auth_headers):
+    """A seller's history shows only their own events — another seller's
+    activity never leaks in."""
+    # This seller submits a request (only creates an UpgradeRequest —
+    # no subscription event yet)
+    client.post("/auth/upgrade-requests", json={"months": 1}, headers=auth_headers)
+
+    other = client.post(
+        "/auth/signup",
+        json={
+            "email": "history-other@example.com",
+            "password": "secretpass123",
+            "store_name": "History Other",
+        },
+    ).json()
+    login = client.post(
+        "/auth/login",
+        json={"email": "history-other@example.com", "password": "secretpass123"},
+    ).json()
+    other_headers = {"Authorization": f"Bearer {login['access_token']}"}
+
+    # The other seller sees nothing — the first seller's activity
+    # belongs to the first seller
+    events = client.get("/auth/subscription-history", headers=other_headers).json()
+    assert events == []
+
+
+def test_subscription_history_requires_authentication(client):
+    assert client.get("/auth/subscription-history").status_code == 401
 
 
 def test_ledger_records_full_lifecycle(client, seller, auth_headers, admin_headers):
@@ -421,10 +481,10 @@ def test_stats_custom_range_validation(client, auth_headers):
 
 def test_stats_include_plan_usage_meter(client, auth_headers, order):
     stats = client.get("/orders/stats/summary", headers=auth_headers).json()
-    # month_orders stays useful ("orders this month"); no cap follows
-    # it anymore — plans are uncapped
+    # month_orders is the current usage; plan_limit is the Free allowance
+    # (None would mean unlimited — that's Pro's answer, not Free's)
     assert stats["month_orders"] == 1
-    assert stats["plan_limit"] is None
+    assert stats["plan_limit"] == 15
 
 
 def test_orders_multi_status_filter(client, auth_headers, order):

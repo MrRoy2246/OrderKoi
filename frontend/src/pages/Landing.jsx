@@ -120,7 +120,7 @@ export default function Landing() {
               </Link>
             </div>
           )}
-          <p className="hero-hint">Free · Unlimited orders · No app needed</p>
+          <p className="hero-hint">Free to start · Unlimited orders on Pro · No app needed</p>
         </div>
         <TrackingMock />
       </section>
