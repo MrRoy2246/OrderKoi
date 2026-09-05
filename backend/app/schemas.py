@@ -112,8 +112,9 @@ class AdminStatsOut(BaseModel):
     subscription_revenue_30d: float = 0.0
     # Chart series (business-timezone months, oldest first)
     orders_daily: list["DailyCount"] = []  # last 30 days
-    revenue_monthly: list[MonthValue] = []  # last 12 months, GMV
+    revenue_monthly: list[MonthValue] = []  # last 12 months, sellers' GMV
     sellers_monthly: list[MonthCount] = []  # last 12 months, signups
+    subscription_monthly: list[MonthValue] = []  # last 12 months, paid Pro money
 
 
 class PlanUpdate(BaseModel):

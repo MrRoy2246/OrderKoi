@@ -203,6 +203,23 @@ def platform_stats(
         db, since=utcnow().replace(tzinfo=None) - timedelta(days=30)
     )
 
+    # Monthly paid-Pro money (same 12-month window as GMV) — the
+    # "your earnings" chart. Comp grants excluded, priced per entry.
+    sub_month_expr = func.strftime("%Y-%m", SubscriptionEvent.created_at, *sqlite_shift_modifiers())
+    paid_events = (
+        db.query(SubscriptionEvent.created_at, SubscriptionEvent.months)
+        .filter(
+            SubscriptionEvent.event.in_(["subscribed", "renewed"]),
+            SubscriptionEvent.comp.is_(False),
+            SubscriptionEvent.months.isnot(None),
+        )
+        .all()
+    )
+    sub_month_map: dict[str, float] = {}
+    for created_at, months in paid_events:
+        key = to_business_time(as_aware(created_at)).strftime("%Y-%m")
+        sub_month_map[key] = sub_month_map.get(key, 0.0) + PRO_PRICES.get(months, 0)
+
     # ---- Chart series (business-timezone buckets, oldest first) ----
 
     # Orders per day, last 30 days
@@ -283,6 +300,15 @@ def platform_stats(
         months_series.append(MonthValue(month=key, count=count, value=value))
         cursor += 1
     revenue_monthly = months_series
+
+    subscription_monthly = [
+        MonthValue(
+            month=m.month,
+            count=0,
+            value=round(sub_month_map.get(m.month, 0.0), 2),
+        )
+        for m in months_series
+    ]
     sellers_monthly = [
         MonthCount(month=m.month, count=signup_map.get(m.month, 0)) for m in months_series
     ]
@@ -304,6 +330,7 @@ def platform_stats(
         "orders_daily": orders_daily,
         "revenue_monthly": revenue_monthly,
         "sellers_monthly": sellers_monthly,
+        "subscription_monthly": subscription_monthly,
     }
 
 

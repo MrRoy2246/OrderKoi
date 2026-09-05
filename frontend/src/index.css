@@ -1251,6 +1251,142 @@ textarea {
   }
 }
 
+/* ---- Earnings section (admin overview) ----
+   Two hero cards at the top: the two kinds of money on the platform —
+   what the admin earned (Pro subscriptions) vs what sellers earned
+   collectively through their shops (order value). */
+
+.earnings-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 900px) {
+  .earnings-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.earnings-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: var(--shadow-1);
+  position: relative;
+  overflow: hidden;
+}
+
+.earnings-card--admin {
+  border-top: 3px solid var(--primary);
+}
+
+.earnings-card--sellers {
+  border-top: 3px solid var(--success);
+}
+
+/* Click affordance for the admin card (opens the ledger) */
+.earnings-card--admin {
+  cursor: pointer;
+  transition: transform var(--t-fast), box-shadow var(--t-fast);
+}
+
+.earnings-card--admin:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-2);
+}
+
+.earnings-card--admin:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.earnings-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.earnings-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.earnings-icon--admin {
+  color: var(--primary);
+  background: var(--primary-tint);
+}
+
+.earnings-icon--sellers {
+  color: var(--success);
+  background: var(--success-tint);
+}
+
+.earnings-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+.earnings-sub {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+.earnings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.earnings-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.earnings-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.earnings-trend .icon {
+  color: var(--primary);
+}
+
+.earnings-card--sellers .earnings-trend .icon {
+  color: var(--success);
+}
+
+.earnings-foot {
+  font-size: 11.5px;
+  color: var(--faint);
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
+/* Compact charts inside the earnings cards */
+.earnings-card .chart {
+  height: 120px;
+  padding-top: 12px;
+}
+
 /* Comp toggle — the "give this free" switch in the Pro grant modal */
 .comp-toggle {
   display: flex;

@@ -57,6 +57,7 @@ function formatDate(value) {
 
 /** Platform-owner view: the whole OrderKoi business at a glance. */
 export default function AdminOverview() {
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -126,7 +127,84 @@ export default function AdminOverview() {
         </section>
       )}
 
-      {/* The numbers that define the business */}
+      {/* Earnings — the two kinds of money, clearly separated:
+          what YOU earned (Pro subscriptions) vs what your SELLERS
+          earned collectively through their shops (order value). */}
+      <section className="earnings-grid">
+        <article
+          className="earnings-card earnings-card--admin"
+          role="link"
+          tabIndex={0}
+          title="See the subscription ledger"
+          onClick={() => navigate("/admin/requests")}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") navigate("/admin/requests");
+          }}
+        >
+          <header className="earnings-head">
+            <span className="earnings-icon earnings-icon--admin">
+              <Icon name="creditCard" size={22} />
+            </span>
+            <div>
+              <h2 className="earnings-title">Your earnings</h2>
+              <p className="earnings-sub">Pro subscriptions across the platform</p>
+            </div>
+          </header>
+          <div className="earnings-body">
+            <span className="earnings-value">{formatTk(stats.subscription_revenue_total)}</span>
+            <span className="earnings-trend">
+              <Icon name="sparkles" size={13} />
+              {formatTk(stats.subscription_revenue_30d)} in the last 30 days
+            </span>
+          </div>
+          <MonthlyBars
+            data={stats.subscription_monthly.map((m) => ({
+              key: m.month,
+              count: m.count,
+              value: m.value,
+            }))}
+            valueLabel="earned"
+          />
+          <p className="earnings-foot">
+            From {stats.pro_sellers} active Pro seller{stats.pro_sellers === 1 ? "" : "s"} ·
+            free (comp) grants excluded
+          </p>
+        </article>
+
+        <article className="earnings-card earnings-card--sellers">
+          <header className="earnings-head">
+            <span className="earnings-icon earnings-icon--sellers">
+              <Icon name="banknote" size={22} />
+            </span>
+            <div>
+              <h2 className="earnings-title">Sellers' income</h2>
+              <p className="earnings-sub">Total order value across all stores</p>
+            </div>
+          </header>
+          <div className="earnings-body">
+            <span className="earnings-value">{formatTk(stats.platform_revenue)}</span>
+            <span className="earnings-trend">
+              <Icon name="package" size={13} />
+              {formatTk(stats.gmv_this_month)} this month ·{" "}
+              {stats.orders_this_month} order{stats.orders_this_month === 1 ? "" : "s"}
+            </span>
+          </div>
+          <MonthlyBars
+            data={stats.revenue_monthly.map((m) => ({
+              key: m.month,
+              count: m.count,
+              value: m.value,
+            }))}
+            valueLabel="GMV"
+          />
+          <p className="earnings-foot">
+            This is your sellers' money — you don't take a cut. Your income is the Pro
+            subscriptions on the left.
+          </p>
+        </article>
+      </section>
+
+      {/* Platform pulse */}
       <section className="stat-grid">
         <StatTile
           icon="store"
@@ -159,41 +237,18 @@ export default function AdminOverview() {
           spark={stats.orders_daily?.map((d) => d.count)}
         />
         <StatTile
-          icon="banknote"
-          label="Gross order value"
-          value={formatTk(stats.platform_revenue)}
-          hint="total value of non-cancelled orders"
-          accent="green"
-        />
-        <StatTile
-          icon="creditCard"
-          label="Subscription earnings"
-          value={formatTk(stats.subscription_revenue_total)}
-          hint="what sellers paid for Pro — comps excluded"
-          accent="amber"
-          to="/admin/requests"
-          title="See the subscription ledger"
-          spark={stats.revenue_monthly?.map((m) => m.value)}
-        />
-        <StatTile
           icon="chartBar"
-          label="Earned · last 30 days"
-          value={formatTk(stats.subscription_revenue_30d)}
-          hint="Pro payments in the last 30 days"
+          label="New sellers · 30 days"
+          value={stats.new_sellers_30d}
+          hint={`${monthName} so far: ${stats.orders_this_month} orders`}
           accent="green"
         />
       </section>
 
-      {/* Charts — orders per day, GMV per month, growth per month */}
+      {/* Charts — activity and growth */}
       <section className="card">
         <div className="card-header-row">
           <h3>Orders — last 30 days</h3>
-          <span className="chart-legend" aria-hidden="true">
-            <span className="chart-legend-item">
-              <span className="chart-legend-swatch chart-legend-swatch--bar" />
-              orders/day
-            </span>
-          </span>
         </div>
         <MonthlyBars
           data={stats.orders_daily.map((d) => ({ key: d.date, count: d.count }))}
@@ -204,7 +259,7 @@ export default function AdminOverview() {
       <div className="admin-chart-grid">
         <section className="card">
           <div className="card-header-row">
-            <h3>Gross order value — last 12 months</h3>
+            <h3>Sellers' income — last 12 months</h3>
           </div>
           <MonthlyBars
             data={stats.revenue_monthly.map((m) => ({
@@ -245,31 +300,6 @@ export default function AdminOverview() {
             { label: "Free", value: stats.free_sellers, color: "var(--border-strong)" },
           ]}
         />
-      </section>
-
-      {/* Growth pulse — this business month */}
-      <section className="card admin-month-card">
-        <h3>{monthName} so far</h3>
-        <div className="admin-month-strip">
-          <div className="admin-month-stat">
-            <span className="admin-month-value">{stats.orders_this_month}</span>
-            <span className="admin-month-label">orders</span>
-          </div>
-          <div className="admin-month-divider" aria-hidden="true" />
-          <div className="admin-month-stat">
-            <span className="admin-month-value">{formatTk(stats.gmv_this_month)}</span>
-            <span className="admin-month-label">order value</span>
-          </div>
-          <div className="admin-month-divider" aria-hidden="true" />
-          <div className="admin-month-stat">
-            <span className="admin-month-value">{stats.new_sellers_30d}</span>
-            <span className="admin-month-label">new sellers · 30 days</span>
-          </div>
-        </div>
-        <p className="muted-note">
-          Free sellers can create 50 orders a month — beyond that they need Pro,
-          which they pay for via bKash/Nagad and you activate after verifying.
-        </p>
       </section>
 
       <section className="card">

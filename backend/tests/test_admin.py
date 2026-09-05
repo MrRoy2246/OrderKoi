@@ -316,12 +316,40 @@ def test_platform_stats_chart_series_shapes(client, admin_headers, auth_headers,
     # 12 monthly buckets, oldest first, current month last
     assert len(stats["revenue_monthly"]) == 12
     assert len(stats["sellers_monthly"]) == 12
+    assert len(stats["subscription_monthly"]) == 12
     months = [m["month"] for m in stats["revenue_monthly"]]
     assert months == sorted(months)
+    assert [m["month"] for m in stats["subscription_monthly"]] == months
     # The current month (Asia/Dhaka) holds the fresh order's GMV
     assert stats["revenue_monthly"][-1]["value"] >= 1400
     # And the fresh signup
     assert stats["sellers_monthly"][-1]["count"] >= 1
+
+
+def test_subscription_monthly_tracks_paid_grants(client, admin_headers, seller):
+    """A paid activation lands in the current month's bucket; comp
+    grants never do."""
+    before = client.get("/admin/stats", headers=admin_headers).json()
+    client.patch(
+        f"/admin/sellers/{seller['id']}/plan",
+        json={"plan": "pro", "months": 6},
+        headers=admin_headers,
+    )
+    client.patch(
+        f"/admin/sellers/{seller['id']}/plan",
+        json={"plan": "pro", "months": 1, "comp": True},
+        headers=admin_headers,
+    )
+    stats = client.get("/admin/stats", headers=admin_headers).json()
+    # Current month gained only the paid 6-month price
+    assert (
+        stats["subscription_monthly"][-1]["value"]
+        == before["subscription_monthly"][-1]["value"] + 1499
+    )
+    # And the total agrees with the month series sum
+    assert stats["subscription_revenue_total"] >= sum(
+        m["value"] for m in stats["subscription_monthly"]
+    )
 
 
 def test_platform_stats_comp_revenue_mixed(client, admin_headers, seller):
