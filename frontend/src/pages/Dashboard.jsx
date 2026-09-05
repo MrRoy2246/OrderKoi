@@ -48,14 +48,25 @@ function SubscriptionCard({ seller, stats }) {
   const daysLeft = expiry ? Math.ceil((expiry - new Date()) / DAY_MS) : null;
   const active = pro && (!expiry || daysLeft > 0);
 
-  // Free-plan allowance (one-time, not monthly) — shown as a usage
-  // meter while there's runway left; amber past 75% used. The
-  // full-limit banner handles the exhausted case, Pro shows nothing.
+  // Footer-strip meters, both in the same one-line style:
+  // Free — order allowance (amber past 75% used, disappears at the
+  // limit where the banner takes over). Pro — subscription runway
+  // (days left vs a year, red inside the last week).
   const limit = stats?.plan_limit ?? null;
   const used = stats?.month_orders ?? 0;
   const showFreeMeter = !active && limit != null && used < limit && limit > 0;
 
-  let headline, subline, meter;
+  const showProMeter = active && expiry != null;
+  const proMeter = showProMeter
+    ? {
+        text: `Pro active — ${daysLeft} day${daysLeft === 1 ? "" : "s"} left`,
+        count: `expires ${formatDate(expiry)}`,
+        pct: Math.min(Math.max((daysLeft / 365) * 100, 4), 100),
+        danger: daysLeft <= 7,
+      }
+    : null;
+
+  let headline, subline;
 
   if (active && !expiry) {
     headline = "Pro — unlimited";
@@ -63,12 +74,6 @@ function SubscriptionCard({ seller, stats }) {
   } else if (active) {
     headline = "Pro";
     subline = `Unlimited orders until ${formatDate(expiry)}`;
-    meter = {
-      label: daysLeft === 1 ? "1 day left" : `${daysLeft} days left`,
-      detail: `expires ${formatDate(expiry)}`,
-      pct: Math.min(Math.max((daysLeft / 365) * 100, 4), 100),
-      tone: daysLeft <= 7 ? "danger" : "pro",
-    };
   } else if (pro && expiry) {
     headline = "Pro expired";
     subline = `Your subscription ended ${formatDate(expiry)} — renew to keep supporting the platform.`;
@@ -90,16 +95,6 @@ function SubscriptionCard({ seller, stats }) {
             {headline}
           </span>
           <span className="subscription-subline">{subline}</span>
-          {meter && (
-            <div className={`subscription-meter subscription-meter--${meter.tone}`}>
-              <div className="subscription-meter-track">
-                <div className="subscription-meter-fill" style={{ width: `${meter.pct}%` }} />
-              </div>
-              <span className="subscription-meter-label">
-                {meter.label} <span className="subscription-meter-detail">· {meter.detail}</span>
-              </span>
-            </div>
-          )}
         </div>
         <span className="subscription-action" aria-hidden="true">
           {active ? "Manage / renew" : "Upgrade to Pro"}
@@ -109,6 +104,21 @@ function SubscriptionCard({ seller, stats }) {
       {showFreeMeter && (
         <div className="subscription-card-meter">
           <FreeOrderMeter limit={limit} used={used} />
+        </div>
+      )}
+      {proMeter && (
+        <div className="subscription-card-meter">
+          <div
+            className={`free-meter free-meter--pro${proMeter.danger ? " free-meter--danger" : ""}`}
+            role="status"
+            aria-label={`Pro active, ${daysLeft} days left, expires ${formatDate(expiry)}`}
+          >
+            <span className="free-meter-text">{proMeter.text}</span>
+            <div className="free-meter-track">
+              <div className="free-meter-fill" style={{ width: `${proMeter.pct}%` }} />
+            </div>
+            <span className="free-meter-count free-meter-count--date">{proMeter.count}</span>
+          </div>
         </div>
       )}
     </div>
