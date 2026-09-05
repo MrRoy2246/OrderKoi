@@ -501,17 +501,15 @@ def test_stats_daily_revenue_excludes_cancelled(client, auth_headers, order):
     assert summary["revenue"] == 0
 
 
-def test_free_plan_monthly_limit_enforced(client, auth_headers, monkeypatch):
-    from app.routes import orders as orders_module
-
-    # Shrink the limit so the test stays fast
-    monkeypatch.setattr(orders_module.settings, "free_plan_monthly_orders", 2)
-
-    for _ in range(2):
+def test_plans_are_uncapped(client, auth_headers):
+    """The free-plan order cap was removed — Free sellers place orders
+    without a monthly limit. A dozen orders in the month must all be
+    accepted (the old cap was 50; this guards against its return)."""
+    for i in range(12):
         response = client.post(
             "/orders",
             json={
-                "customer_name": "Limit Test",
+                "customer_name": f"Limit Test {i}",
                 "customer_phone": "01800000000",
                 "items": [{"name": "X", "quantity": 1, "price": 10}],
             },
@@ -519,76 +517,25 @@ def test_free_plan_monthly_limit_enforced(client, auth_headers, monkeypatch):
         )
         assert response.status_code == 201
 
-    blocked = client.post(
+    # The stats summary no longer advertises a cap
+    summary = client.get("/orders/stats/summary?range=7d", headers=auth_headers).json()
+    assert summary["plan_limit"] is None
+
+
+def test_admin_cannot_create_orders(client, admin_headers):
+    """The one order-creation gate that remains: platform accounts
+    don't run shops."""
+    response = client.post(
         "/orders",
         json={
-            "customer_name": "Limit Test",
+            "customer_name": "Should Fail",
             "customer_phone": "01800000000",
             "items": [{"name": "X", "quantity": 1, "price": 10}],
         },
-        headers=auth_headers,
+        headers=admin_headers,
     )
-    assert blocked.status_code == 403
-    assert "Free plan limit reached" in blocked.json()["detail"]
-
-
-def test_cancelled_orders_dont_burn_quota(client, auth_headers, monkeypatch):
-    """Cancelling an order refunds its quota unit (audit fix #8) — a
-    seller who cancels mistakes or form spam isn't punished for it."""
-    from app.routes import orders as orders_module
-
-    monkeypatch.setattr(orders_module.settings, "free_plan_monthly_orders", 1)
-
-    payload = {
-        "customer_name": "Quota Test",
-        "customer_phone": "01800000000",
-        "items": [{"name": "X", "quantity": 1, "price": 10}],
-    }
-
-    first = client.post("/orders", json=payload, headers=auth_headers)
-    assert first.status_code == 201
-    order_id = first.json()["id"]
-
-    # Quota of 1 is now spent
-    blocked = client.post("/orders", json=payload, headers=auth_headers)
-    assert blocked.status_code == 403
-
-    # Cancelling the order frees the unit again
-    cancel = client.patch(
-        f"/orders/{order_id}/status", json={"status": "cancelled"}, headers=auth_headers
-    )
-    assert cancel.status_code == 200
-    assert client.post("/orders", json=payload, headers=auth_headers).status_code == 201
-
-
-def test_pro_plan_bypasses_limit(client, auth_headers, monkeypatch):
-    from app.models import Seller
-    from conftest import TestingSessionLocal
-
-    from app.routes import orders as orders_module
-
-    monkeypatch.setattr(orders_module.settings, "free_plan_monthly_orders", 1)
-
-    # Promote the seller to pro directly in the DB
-    db = TestingSessionLocal()
-    try:
-        me = client.get("/auth/me", headers=auth_headers).json()
-        db.query(Seller).filter(Seller.id == me["id"]).update({"plan": "pro"})
-        db.commit()
-    finally:
-        db.close()
-
-    for _ in range(3):  # over the free limit — pro allows it
-        response = client.post(
-            "/orders",
-            json={
-                "customer_name": "Pro Test",
-                "customer_phone": "01800000001",
-                "items": [{"name": "X", "quantity": 1, "price": 10}],
-            },
-            headers=auth_headers,
-        )
-        assert response.status_code == 201
+    assert response.status_code == 403
+    assert "platform accounts" in response.json()["detail"].lower()
 
 
 # ---------- Per-shop stats (admin drill-down) ----------

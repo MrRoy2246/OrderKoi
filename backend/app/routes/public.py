@@ -18,13 +18,12 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import get_db
 from app.email import send_email
-from app.models import Order, OrderStatus, Seller, pro_plan_active
+from app.models import Order, OrderStatus, Seller
 from app.routes.orders import (
     _compute_total,
     _generate_tracking_code,
     _initial_history,
     _insert_order_with_retry,
-    _month_order_count,
 )
 from app.schemas import PublicOrderCreate, PublicOrderCreated, PublicStoreOut
 
@@ -52,19 +51,6 @@ def _get_store(slug: str, db: Session) -> Seller:
     return seller
 
 
-def _check_store_limit(seller: Seller, db: Session) -> None:
-    """Free plan cap — phrased for the customer, not the seller."""
-    if pro_plan_active(seller):
-        return
-
-    if _month_order_count(seller, db) >= settings.free_plan_monthly_orders:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This store cannot accept new orders right now. "
-            "Please contact the store directly.",
-        )
-
-
 @router.get(
     "/{slug}",
     response_model=PublicStoreOut,
@@ -87,7 +73,6 @@ def submit_order(
     db: Session = Depends(get_db),
 ) -> PublicOrderCreated:
     seller = _get_store(slug, db)
-    _check_store_limit(seller, db)
 
     items = [item.model_dump() for item in payload.items]
     total = _compute_total(items)

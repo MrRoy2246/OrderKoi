@@ -34,11 +34,11 @@ function toDateInput(date) {
 
 /**
  * The subscription card — the seller always knows exactly where they
- * stand: plan, expiry date, days remaining, and (on Free) a live
- * usage meter against the monthly order cap. Clicking it opens the
- * upgrade/renew options in Settings.
+ * stand: plan, expiry date, and days remaining on Pro. Clicking it
+ * opens the upgrade/renew options in Settings. (Plans are uncapped —
+ * there is no order meter anymore.)
  */
-function SubscriptionCard({ seller, stats }) {
+function SubscriptionCard({ seller }) {
   const pro = seller?.plan === "pro";
   const expiry = seller?.plan_expires_at ? parseServerDate(seller.plan_expires_at) : null;
   const daysLeft = expiry ? Math.ceil((expiry - new Date()) / DAY_MS) : null;
@@ -60,18 +60,10 @@ function SubscriptionCard({ seller, stats }) {
     };
   } else if (pro && expiry) {
     headline = "Pro expired";
-    subline = `Your subscription ended ${formatDate(expiry)} — you're back on Free limits.`;
+    subline = `Your subscription ended ${formatDate(expiry)} — renew to keep supporting the platform.`;
   } else {
     headline = "Free plan";
-    subline = "Up to 50 orders per month";
-    const used = stats?.month_orders ?? 0;
-    const limit = stats?.plan_limit ?? 50;
-    meter = {
-      label: `${used} / ${limit} orders this month`,
-      detail: used >= limit ? "limit reached — upgrade to keep selling" : `${limit - used} left`,
-      pct: Math.min((used / limit) * 100, 100),
-      tone: used >= limit ? "danger" : used / limit >= 0.8 ? "warn" : "free",
-    };
+    subline = "Unlimited orders — upgrade to Pro to support the platform";
   }
 
   return (
@@ -325,7 +317,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <SubscriptionCard seller={seller} stats={stats} />
+      <SubscriptionCard seller={seller} />
 
       {loading ? (
         <div className="stat-grid" aria-hidden="true">

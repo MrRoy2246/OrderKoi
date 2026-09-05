@@ -210,12 +210,13 @@ def test_renewal_stacks_on_active_subscription(client, seller, auth_headers, adm
     assert timedelta(days=27) < added < timedelta(days=35)
 
 
-def test_expired_pro_treated_as_free(client, auth_headers, monkeypatch):
-    """Pro with a past expiry date is effectively Free again."""
+def test_expired_pro_back_on_free_but_uncapped(client, auth_headers):
+    """Pro with a past expiry date is effectively Free again — but
+    Free is no longer throttled, so orders still flow."""
     from datetime import datetime, timezone
 
     from app.models import Seller
-    from app.routes import orders as orders_module
+    from conftest import TestingSessionLocal
 
     db = TestingSessionLocal()
     try:
@@ -230,8 +231,8 @@ def test_expired_pro_treated_as_free(client, auth_headers, monkeypatch):
     finally:
         db.close()
 
-    monkeypatch.setattr(orders_module.settings, "free_plan_monthly_orders", 0)
-    blocked = client.post(
+    # Expired Pro = Free, and Free is uncapped — the order is accepted
+    response = client.post(
         "/orders",
         json={
             "customer_name": "Expired Pro",
@@ -240,7 +241,7 @@ def test_expired_pro_treated_as_free(client, auth_headers, monkeypatch):
         },
         headers=auth_headers,
     )
-    assert blocked.status_code == 403
+    assert response.status_code == 201
 
 
 # ---------- Cancellation ----------
@@ -420,9 +421,10 @@ def test_stats_custom_range_validation(client, auth_headers):
 
 def test_stats_include_plan_usage_meter(client, auth_headers, order):
     stats = client.get("/orders/stats/summary", headers=auth_headers).json()
-    # Free plan: the meter shows 1 of the monthly cap
+    # month_orders stays useful ("orders this month"); no cap follows
+    # it anymore — plans are uncapped
     assert stats["month_orders"] == 1
-    assert stats["plan_limit"] == 50
+    assert stats["plan_limit"] is None
 
 
 def test_orders_multi_status_filter(client, auth_headers, order):

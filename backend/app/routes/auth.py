@@ -322,7 +322,7 @@ def cancel_subscription(
             body=(
                 "A seller cancelled their Pro subscription.\n\n"
                 f"Store: {seller.store_name} ({seller.email})\n"
-                "The account is back on the Free plan (50 orders/month).\n\n"
+                "The account is back on the Free plan.\n\n"
                 "Might be worth a friendly check-in to see what went wrong.\n\n"
                 "— OrderKoi"
             ),

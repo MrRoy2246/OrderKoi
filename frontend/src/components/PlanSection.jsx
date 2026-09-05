@@ -91,8 +91,8 @@ export default function PlanSection() {
   async function handleCancel() {
     const confirmed = window.confirm(
       "Cancel your Pro subscription?\n\n" +
-        "• Pro ends immediately — unlimited orders stops now\n" +
-        "• You'll return to the Free plan (50 orders per month)\n" +
+        "• Your Pro status ends immediately\n" +
+        "• Your account stays on the Free plan (orders keep working, unlimited)\n" +
         "• Payments already made are not refunded automatically — contact support if needed\n\n" +
         "If you just don't want to renew, you can simply do nothing instead."
     );
@@ -139,7 +139,7 @@ export default function PlanSection() {
           )}
         </div>
         <span className="plan-limit-note">
-          {proActive ? "Unlimited orders" : "50 orders per month"}
+          {proActive ? "Supporting the platform" : "Unlimited orders"}
         </span>
       </div>
 
@@ -223,7 +223,7 @@ export default function PlanSection() {
         </>
       ) : (
         <p className="muted-note">
-          You&apos;re on Pro with no expiry set — enjoy unlimited orders!
+          You&apos;re on Pro with no expiry set — thank you for supporting the platform!
         </p>
       )}
 

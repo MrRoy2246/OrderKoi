@@ -1,12 +1,10 @@
 """Public order form tests.
 
 Covers: store lookup by slug, order submission without auth,
-seller notification email, plan limits, and validation.
+seller notification email, validation, and the (removed) plan cap.
 """
 
 import pytest
-
-from app.routes import public as public_module
 
 
 @pytest.fixture
@@ -179,37 +177,12 @@ def test_submit_order_isolated_between_stores(client, seller, form_payload, auth
     assert orders.json()["total"] == 0
 
 
-# ---------- Plan limits ----------
+# ---------- Plan limits (removed: plans are uncapped) ----------
 
-def test_submit_order_respects_free_plan_limit(client, seller, form_payload, monkeypatch):
-    monkeypatch.setattr(public_module.settings, "free_plan_monthly_orders", 1)
-
+def test_submit_order_uncapped_for_free(client, seller, form_payload):
+    """The free-plan cap was removed — a Free store's form keeps
+    accepting submissions no matter how many came this month."""
     slug = seller["store_slug"]
-    first = client.post(f"/public/stores/{slug}/orders", json=form_payload)
-    assert first.status_code == 201
-
-    # Form orders count toward the seller's monthly quota
-    second = client.post(f"/public/stores/{slug}/orders", json=form_payload)
-    assert second.status_code == 403
-    assert "cannot accept new orders" in second.json()["detail"]
-
-
-def test_submit_order_unlimited_for_pro(client, seller, form_payload, monkeypatch):
-    """A paid store never turns a customer away."""
-    from app.models import Seller
-    from conftest import TestingSessionLocal
-
-    monkeypatch.setattr(public_module.settings, "free_plan_monthly_orders", 1)
-
-    # Flip the store to pro directly in the DB
-    db = TestingSessionLocal()
-    try:
-        db.query(Seller).filter(Seller.id == seller["id"]).update({"plan": "pro"})
-        db.commit()
-    finally:
-        db.close()
-
-    slug = seller["store_slug"]
-    for _ in range(3):  # over the free limit — pro allows it
+    for _ in range(5):
         response = client.post(f"/public/stores/{slug}/orders", json=form_payload)
         assert response.status_code == 201

@@ -17,10 +17,9 @@ from sqlalchemy import case, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
 from app.database import get_db
 from app.deps import get_current_seller
-from app.models import Order, OrderStatus, Seller, VALID_TRANSITIONS, pro_plan_active, utcnow
+from app.models import Order, OrderStatus, Seller, VALID_TRANSITIONS, utcnow
 from app.schemas import (
     DailyValue,
     OrderCreate,
@@ -39,8 +38,6 @@ from app.timezone import (
 )
 
 router = APIRouter(prefix="/orders", tags=["orders"])
-
-settings = get_settings()
 
 
 def _generate_tracking_code() -> str:
@@ -120,23 +117,15 @@ def _month_order_count(seller: Seller, db: Session) -> int:
     )
 
 
-def _check_plan_limit(seller: Seller, db: Session) -> None:
-    """Free plan: cap on orders per calendar month. Pro: unlimited."""
+def _check_plan_limit(seller: Seller, db: Session) -> None:  # noqa: ARG001
+    """Admin accounts are platform accounts, not shops — only they are
+    blocked from creating orders. Plans themselves are uncapped: the
+    admin can comp Pro time, and Free sellers aren't throttled."""
     if seller.role == "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin accounts are platform accounts — they don't place orders. "
             "Log in with a seller account to manage orders.",
-        )
-
-    if pro_plan_active(seller):
-        return
-
-    if _month_order_count(seller, db) >= settings.free_plan_monthly_orders:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Free plan limit reached ({settings.free_plan_monthly_orders} orders per month). "
-            "Upgrade to Pro for unlimited orders.",
         )
 
 
@@ -471,7 +460,9 @@ def stats_summary(
         "status_counts": status_counts,
         "daily": daily,
         "month_orders": _month_order_count(seller, db),
-        "plan_limit": None if pro_plan_active(seller) else settings.free_plan_monthly_orders,
+        # Plans are uncapped — kept in the response for frontend
+        # compatibility; None means "no monthly limit"
+        "plan_limit": None,
     }
 
 
