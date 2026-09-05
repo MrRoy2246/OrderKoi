@@ -6,8 +6,8 @@ import { BarChart } from "../components/Charts";
 import { DashboardFilters, rangeLabel, rangeToWindow } from "../components/DashboardFilters";
 import Icon from "../components/icons";
 import { SkeletonCard, SkeletonRows } from "../components/States";
+import StatusBreakdown from "../components/StatusBreakdown";
 import { formatTk, parseServerDate } from "../utils/orderStatus";
-import { STATUS_META } from "../utils/orderStatus";
 
 const DEFAULT_RANGE = "30d";
 
@@ -22,9 +22,6 @@ function formatDate(iso) {
     year: "numeric",
   });
 }
-
-/** Status keys in workflow order (placed → delivered, cancelled last). */
-const STATUS_ORDER = ["placed", "confirmed", "shipped", "delivered", "cancelled"];
 
 /**
  * One shop, in depth — the admin's drill-down from the sellers list.
@@ -341,33 +338,7 @@ export default function AdminShopDetail() {
         <div className="card-header-row">
           <h3>Order status breakdown · {windowLabel}</h3>
         </div>
-        {statusTotal === 0 ? (
-          <p className="muted-note">No orders in this period.</p>
-        ) : (
-          <ul className="status-breakdown">
-            {STATUS_ORDER.map((key) => {
-              const count = shop.status_counts?.[key] ?? 0;
-              const pct = statusTotal > 0 ? Math.round((count / statusTotal) * 100) : 0;
-              const meta = STATUS_META[key];
-              return (
-                <li key={key} className="status-row">
-                  <span className="status-row-label">
-                    <span className={`badge ${meta.className}`}>{meta.label}</span>
-                  </span>
-                  <span className="status-row-bar" aria-hidden="true">
-                    <span
-                      className={`status-row-fill status-row-fill--${key}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </span>
-                  <span className="status-row-value">
-                    {count} · {pct}%
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+        <StatusBreakdown counts={shop.status_counts} />
         <p className="chart-card-foot">
           {statusTotal} order{statusTotal === 1 ? "" : "s"} in this period · {fulfilledPct}%
           delivered · {cancelledPct}% cancelled

@@ -5,8 +5,9 @@ import { useAuth } from "../auth/AuthContext";
 import { BarChart, Sparkline } from "../components/Charts";
 import Icon from "../components/icons";
 import { SkeletonCard } from "../components/States";
+import StatusBreakdown from "../components/StatusBreakdown";
 import { ordersLink } from "../utils/businessDate";
-import { STATUS_META, formatTk, parseServerDate } from "../utils/orderStatus";
+import { formatTk, parseServerDate } from "../utils/orderStatus";
 
 const RANGE_OPTIONS = [
   { value: "today", label: "Today" },
@@ -391,23 +392,7 @@ export default function Dashboard() {
             <div className="card-header-row">
               <h3>Status breakdown ({rangeLabel})</h3>
             </div>
-            <div className="status-breakdown">
-              {Object.entries(stats.status_counts).map(([status, count]) => (
-                <div key={status} className="status-breakdown-row">
-                  <span className="status-breakdown-label">
-                    <span className={`badge-dot badge-dot--${status}`} aria-hidden="true" />
-                    {STATUS_META[status]?.label ?? status}
-                  </span>
-                  <div className="status-breakdown-track">
-                    <div
-                      className={`status-breakdown-fill badge-bg--${status}`}
-                      style={{ width: `${(count / Math.max(stats.total_orders, 1)) * 100}%` }}
-                    />
-                  </div>
-                  <span className="status-breakdown-count">{count}</span>
-                </div>
-              ))}
-            </div>
+            <StatusBreakdown counts={stats.status_counts} />
             <p className="muted-note">
               {stats.total_orders} order{stats.total_orders === 1 ? "" : "s"} in this
               range · {stats.cancelled_orders} cancelled

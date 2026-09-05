@@ -303,6 +303,13 @@ export default function AdminOverview() {
   // New signups over the chart's actual series — the meta line must
   // describe what's plotted, not a fixed 30-day pulse
   const newSellersInSeries = stats.sellers_monthly.reduce((sum, m) => sum + m.count, 0);
+  // Window sums — the chart meta must carry what's PLOTTED in the
+  // selected range, not the all-time totals
+  const revenueInWindow = monthly.reduce((sum, m) => sum + m.value, 0);
+  const subsInWindow = stats.subscription_monthly.reduce(
+    (sum, m) => sum + m.value,
+    0
+  );
   const filterLabel = rangeLabel(range, custom);
   const windowLabel =
     range === "custom" && !custom ? "last 30 days" : filterLabel.toLowerCase();
@@ -414,8 +421,8 @@ export default function AdminOverview() {
       <div className="admin-chart-grid admin-chart-grid--revenue">
         <ChartCard
           title="Platform revenue"
-          meta={`${formatTk(stats.subscription_revenue_total)} · ${chartScope}`}
-          footer={`From ${stats.pro_sellers} active Pro seller${stats.pro_sellers === 1 ? "" : "s"} · free (comp) grants excluded`}
+          meta={`${formatTk(subsInWindow)} in ${chartScope}`}
+          footer={`All-time: ${formatTk(stats.subscription_revenue_total)} · from ${stats.pro_sellers} active Pro seller${stats.pro_sellers === 1 ? "" : "s"} · comp grants excluded`}
         >
           <BarChart
             data={stats.subscription_monthly.map((m) => ({ key: bucketKey(m), value: m.value }))}
@@ -426,7 +433,7 @@ export default function AdminOverview() {
 
         <ChartCard
           title="Seller income"
-          meta={`${formatTk(stats.platform_revenue)} · ${chartScope}`}
+          meta={`${formatTk(revenueInWindow)} in ${chartScope}`}
           tabs={[
             { value: "revenue", label: "Revenue" },
             { value: "orders", label: "Orders" },
@@ -434,7 +441,7 @@ export default function AdminOverview() {
           ]}
           activeTab={incomeMeasure}
           onTab={setIncomeMeasure}
-          footer="Your sellers' money — you don't take a cut. Your income is the Pro subscriptions."
+          footer="All-time sales across every shop — you don't take a cut. Your income is the Pro subscriptions."
         >
           <BarChart
             data={incomeData}
