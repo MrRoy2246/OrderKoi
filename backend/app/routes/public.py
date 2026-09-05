@@ -18,13 +18,14 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import get_db
 from app.email import send_email
-from app.models import Order, OrderStatus, Seller
+from app.models import Order, OrderStatus, Seller, pro_plan_active
 from app.routes.orders import (
     _compute_total,
     _generate_tracking_code,
     _initial_history,
     _insert_order_with_retry,
     _check_plan_limit,
+    _lifetime_order_count,
 )
 from app.schemas import PublicOrderCreate, PublicOrderCreated, PublicStoreOut
 
@@ -59,7 +60,15 @@ def _get_store(slug: str, db: Session) -> Seller:
 )
 def get_store(slug: str, db: Session = Depends(get_db)) -> PublicStoreOut:
     seller = _get_store(slug, db)
-    return PublicStoreOut(store_name=seller.store_name, slug=seller.store_slug)
+    # A free-plan store that used its allowance is paused for customers
+    # — the form knows up front so it can show a proper notice instead
+    # of rejecting a filled-in submission
+    accepting = pro_plan_active(seller) or _lifetime_order_count(seller, db) < settings.free_plan_orders
+    return PublicStoreOut(
+        store_name=seller.store_name,
+        slug=seller.store_slug,
+        is_accepting_orders=accepting,
+    )
 
 
 @router.post(

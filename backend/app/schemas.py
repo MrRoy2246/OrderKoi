@@ -314,6 +314,10 @@ class PublicStoreOut(BaseModel):
 
     store_name: str
     slug: str
+    # False when a free-plan store has used its order allowance — the
+    # form shows a "store paused" card instead of rejecting a filled-in
+    # submission after the fact
+    is_accepting_orders: bool = True
 
 
 class PublicOrderCreate(BaseModel):

@@ -127,14 +127,12 @@ export default function OrderForm() {
       setConfirmation(result);
       window.scrollTo(0, 0);
     } catch (err) {
-      // 402 = the store hit its free-plan monthly allowance — the
-      // customer can't fix that, so soften the message (the seller
-      // got a clear error on their side and an email nudge)
+      // 402 = the store hit its free-plan allowance mid-fill — swap to
+      // the paused state (the customer can't fix this; the seller got
+      // a clear error on their side)
       if (err?.status === 402) {
-        setError(
-          "This store can't receive new orders right now. " +
-            "Please contact the seller directly — they'll sort it out quickly."
-        );
+        setStore((prev) => (prev ? { ...prev, is_accepting_orders: false } : prev));
+        window.scrollTo(0, 0);
       } else {
         setError(getErrorMessage(err, "Could not place your order. Please try again."));
       }
@@ -189,6 +187,41 @@ export default function OrderForm() {
           <div className="orderform-loading" aria-hidden="true">
             <SkeletonCard lines={4} />
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ----- Store paused (free-plan limit reached) — show a proper
+  // notice instead of letting the customer fill the whole form in
+  // only to be rejected at submit -----
+
+  if (!store.is_accepting_orders) {
+    return (
+      <div className="page-centered">
+        <div className="orderform-card">
+          <div className="orderform-header">
+            <span className="orderform-logo orderform-logo--paused" aria-hidden="true">
+              <Icon name="clock" size={26} />
+            </span>
+            <h1>{store.store_name}</h1>
+            <p>
+              This store is <strong>temporarily paused</strong> for new orders and
+              will be back soon.
+            </p>
+          </div>
+
+          <div className="orderform-paused-box" role="status">
+            <p>
+              The seller isn&apos;t taking new orders through this link right now. If
+              you&apos;ve already placed an order, it&apos;s unaffected — track it
+              with the link the seller shared with you.
+            </p>
+          </div>
+
+          <p className="orderform-power">
+            Powered by <strong>OrderKoi</strong> — order tracking for online stores
+          </p>
         </div>
       </div>
     );

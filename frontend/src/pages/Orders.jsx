@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api, getErrorMessage } from "../api/client";
 import Icon from "../components/icons";
 import OrderFormModal from "../components/OrderFormModal";
+import FreeLimitBanner from "../components/FreeLimitBanner";
 import { EmptyState, SkeletonRows } from "../components/States";
 import StatusBadge from "../components/StatusBadge";
 import useMediaQuery from "../utils/useMediaQuery";
@@ -94,6 +95,16 @@ export default function Orders() {
   const [exporting, setExporting] = useState(false);
   const [copiedCode, setCopiedCode] = useState(null);
   const copyTimer = useRef(null);
+
+  // Plan state — powers the free-limit banner (and whether the
+  // "New order" button opens the form or the upgrade prompt)
+  const [planStats, setPlanStats] = useState(null);
+  useEffect(() => {
+    api.stats
+      .summary({ range: "today" })
+      .then(setPlanStats)
+      .catch(() => setPlanStats(null));
+  }, []);
 
   // Debounce the search box so we don't hammer the API on every keystroke
   useEffect(() => {
@@ -257,6 +268,8 @@ export default function Orders() {
           </button>
         </div>
       </header>
+
+      <FreeLimitBanner stats={planStats} />
 
       {error && (
         <div className="alert alert--error" role="alert">

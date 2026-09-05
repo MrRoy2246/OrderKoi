@@ -64,8 +64,10 @@ def test_get_store_returns_name_only(client, seller):
     data = response.json()
     assert data["store_name"] == seller["store_name"]
     assert data["slug"] == seller["store_slug"]
+    # A fresh free store is accepting orders
+    assert data["is_accepting_orders"] is True
     # The store header must not leak account details
-    assert set(data) == {"store_name", "slug"}
+    assert set(data) == {"store_name", "slug", "is_accepting_orders"}
 
 
 def test_get_store_unknown_slug_404(client):
@@ -211,3 +213,8 @@ def test_submit_order_blocked_after_allowance(client, seller, auth_headers, form
         headers=auth_headers,
     )
     assert dashboard.status_code == 402
+
+    # The store header now reports the paused state up front — the
+    # customer form can show a notice instead of a rejected submission
+    store = client.get(f"/public/stores/{slug}").json()
+    assert store["is_accepting_orders"] is False

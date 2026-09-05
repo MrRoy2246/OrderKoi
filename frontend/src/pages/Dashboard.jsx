@@ -6,6 +6,7 @@ import { BarChart, Sparkline } from "../components/Charts";
 import Icon from "../components/icons";
 import { SkeletonCard } from "../components/States";
 import StatusBreakdown from "../components/StatusBreakdown";
+import FreeLimitBanner from "../components/FreeLimitBanner";
 import { ordersLink } from "../utils/businessDate";
 import { formatTk, parseServerDate } from "../utils/orderStatus";
 
@@ -319,6 +320,8 @@ export default function Dashboard() {
           {error}
         </div>
       )}
+
+      <FreeLimitBanner stats={stats} />
 
       <SubscriptionCard seller={seller} />
 

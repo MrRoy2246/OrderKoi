@@ -472,6 +472,64 @@ textarea {
   border-color: rgba(47, 158, 68, 0.3);
 }
 
+/* The focused "free limit reached" banner — Dashboard & Orders. A
+   warm callout that can't be missed but doesn't read as an error:
+   the store still exists, it's just paused for new orders. */
+.free-limit-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, #fff7ec, var(--warning-tint));
+  border: 1px solid rgba(232, 147, 12, 0.35);
+  box-shadow: var(--shadow-1);
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.free-limit-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  color: #b46f0a;
+  background: rgba(232, 147, 12, 0.16);
+}
+
+.free-limit-copy {
+  flex: 1;
+  min-width: 220px;
+}
+
+.free-limit-copy strong {
+  display: block;
+  font-size: 15px;
+  color: #8a5506;
+  margin-bottom: 3px;
+}
+
+.free-limit-copy p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.free-limit-banner .button {
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .free-limit-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 .spinner {
   width: 26px;
   height: 26px;
@@ -3869,6 +3927,27 @@ textarea {
   color: var(--primary);
   background: var(--primary-tint);
   margin-bottom: 12px;
+}
+
+/* Paused store (free-plan allowance used) — amber, calm, informative */
+.orderform-logo--paused {
+  color: var(--warning);
+  background: var(--warning-tint);
+}
+
+.orderform-paused-box {
+  background: var(--warning-tint);
+  border: 1px solid rgba(232, 147, 12, 0.25);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin: 6px 0 14px;
+}
+
+.orderform-paused-box p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink);
 }
 
 .orderform-success-icon {
