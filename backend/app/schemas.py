@@ -92,6 +92,25 @@ class MonthValue(BaseModel):
     value: float
 
 
+class ChartBucket(BaseModel):
+    """One chart bucket that follows the dashboard's date filter.
+
+    The key is a day (YYYY-MM-DD) when the selected window is short
+    (<= 90 days — daily granularity, like the orders chart) or a month
+    (YYYY-MM) when the window is wider (year presets, long customs).
+    The month-keyed fields mirror MonthValue/MonthCount so existing
+    consumers keep working; the day-keyed fields mirror DailyValue.
+    """
+
+    # Day-keyed (short windows)
+    date: str | None = None  # YYYY-MM-DD
+    # Month-keyed (wide windows) — also present on day buckets for
+    # backward compatibility with the old response contract
+    month: str | None = None  # YYYY-MM
+    count: int
+    value: float = 0.0
+
+
 class AdminStatsOut(BaseModel):
     """Platform-wide overview for the admin."""
     total_sellers: int
@@ -110,11 +129,12 @@ class AdminStatsOut(BaseModel):
     # for (comp grants are excluded), computed from the ledger
     subscription_revenue_total: float = 0.0
     subscription_revenue_30d: float = 0.0
-    # Chart series (business-timezone months, oldest first)
-    orders_daily: list["DailyCount"] = []  # last 30 days
-    revenue_monthly: list[MonthValue] = []  # last 12 months, sellers' GMV
-    sellers_monthly: list[MonthCount] = []  # last 12 months, signups
-    subscription_monthly: list[MonthValue] = []  # last 12 months, paid Pro money
+    # Chart series (business-timezone buckets, oldest first) — all
+    # three follow the date filter; granularity adapts to the window
+    orders_daily: list["DailyCount"] = []  # the window, one bucket per day
+    revenue_monthly: list[ChartBucket] = []  # sellers' GMV (daily for short windows)
+    sellers_monthly: list[ChartBucket] = []  # signups (daily for short windows)
+    subscription_monthly: list[ChartBucket] = []  # paid Pro money (daily for short windows)
 
 
 class PlanUpdate(BaseModel):

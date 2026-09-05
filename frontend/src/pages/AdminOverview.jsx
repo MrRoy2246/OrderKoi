@@ -274,6 +274,10 @@ export default function AdminOverview() {
   }
 
   // ---- Derived figures (all real, all from the API payload) ----
+  // Buckets follow the date filter with adaptive granularity: short
+  // windows (<= 90 days) are daily (key in `date`), wide ones are
+  // monthly (key in `month`)
+  const bucketKey = (b) => b.date ?? b.month;
   const ordersInWindow = stats.orders_daily.reduce((sum, d) => sum + d.count, 0);
   const daysInWindow = Math.max(stats.orders_daily.length, 1);
   const avgPerDay = ordersInWindow / daysInWindow;
@@ -286,7 +290,7 @@ export default function AdminOverview() {
   const conversion =
     stats.total_sellers > 0 ? Math.round((stats.pro_sellers / stats.total_sellers) * 100) : 0;
 
-  const monthly = stats.revenue_monthly.map((m) => ({ key: m.month, count: m.count, value: m.value }));
+  const monthly = stats.revenue_monthly.map((m) => ({ key: bucketKey(m), count: m.count, value: m.value }));
   const incomeData =
     incomeMeasure === "revenue"
       ? monthly.map((m) => ({ key: m.key, value: m.value }))
@@ -299,13 +303,13 @@ export default function AdminOverview() {
   // New signups over the chart's actual series — the meta line must
   // describe what's plotted, not a fixed 30-day pulse
   const newSellersInSeries = stats.sellers_monthly.reduce((sum, m) => sum + m.count, 0);
-
   const filterLabel = rangeLabel(range, custom);
   const windowLabel =
     range === "custom" && !custom ? "last 30 days" : filterLabel.toLowerCase();
-  // Monthly money + growth charts: an explicit range scopes them; rolling
-  // presets (the default) keep the trailing 12 months
-  const chartScope = custom ? rangeLabel(range, custom) : "last 12 months";
+  // Every chart now follows the date filter (adaptive granularity:
+  // daily buckets for windows <= 90 days, monthly for wider ones), so
+  // the scope label simply names the selected range
+  const chartScope = windowLabel;
 
   return (
     <div className={`admin-page${statsFetching ? " admin-page--refetching" : ""}`}>
@@ -414,7 +418,7 @@ export default function AdminOverview() {
           footer={`From ${stats.pro_sellers} active Pro seller${stats.pro_sellers === 1 ? "" : "s"} · free (comp) grants excluded`}
         >
           <BarChart
-            data={stats.subscription_monthly.map((m) => ({ key: m.month, value: m.value }))}
+            data={stats.subscription_monthly.map((m) => ({ key: bucketKey(m), value: m.value }))}
             measure="money"
             height={160}
           />
@@ -476,7 +480,7 @@ export default function AdminOverview() {
           meta={`${newSellersInSeries} new seller${newSellersInSeries === 1 ? "" : "s"} · ${chartScope}`}
         >
           <BarChart
-            data={stats.sellers_monthly.map((m) => ({ key: m.month, value: m.count }))}
+            data={stats.sellers_monthly.map((m) => ({ key: bucketKey(m), value: m.count }))}
             height={180}
           />
         </ChartCard>

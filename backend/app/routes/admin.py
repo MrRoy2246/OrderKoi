@@ -34,8 +34,7 @@ from app.schemas import (
     AdminStatsOut,
     AdminSubscriptionEventOut,
     AdminUpgradeRequestOut,
-    MonthCount,
-    MonthValue,
+    ChartBucket,
     DailyCount,
     PlanUpdate,
     PRO_PRICES,
@@ -298,87 +297,162 @@ def platform_stats(
     # UTC-space month arithmetic drifts by the tz offset (Dhaka +6) and
     # produces duplicate or skipped months.
     #
-    # The monthly series spans the SELECTED window (the dashboard's date
-    # filter), not a fixed trailing 12 months — capped at 12 buckets so
-    # a year-long custom range still renders a readable chart.
-    month_expr = func.strftime("%Y-%m", Order.created_at, *sqlite_shift_modifiers())
-    # Scope rule: the window's own months when it spans 2+ calendar
-    # months; trailing 12 months otherwise (both branches set the
-    # window bounds, so they're always available).
+    # Granularity follows the SELECTED window (the dashboard's date
+    # filter): daily buckets for short windows (<= 90 days — same
+    # shape as the orders chart), monthly buckets for wider ones
+    # (year presets, long customs — capped at 12 buckets). Every
+    # chart therefore always follows the filter.
     now_local = business_now()
-    if explicit_range:
-        start_local = to_business_time(window_start_dt.replace(tzinfo=timezone.utc))
-        s_idx = start_local.year * 12 + (start_local.month - 1)
-        end_local = to_business_time(window_end_dt.replace(tzinfo=timezone.utc))
-        e_idx = end_local.year * 12 + (end_local.month - 1)
-        if e_idx > s_idx:  # 2+ calendar months → scope the series
-            start_month_index, end_month_index = s_idx, e_idx
-        else:  # single-month window → keep the 12-month context
-            start_month_index = now_local.year * 12 + (now_local.month - 1) - 11
-            end_month_index = now_local.year * 12 + (now_local.month - 1)
+    now_month_index = now_local.year * 12 + (now_local.month - 1)
+    use_daily = window_days <= 90
+    if use_daily:
+        # Day buckets: reuse the daily GMV rows, but keep every day of
+        # the window (quiet days stay zero so the chart keeps its shape)
+        gmv_daily_rows = (
+            db.query(
+                day_expr,
+                func.count(Order.id),
+                func.coalesce(func.sum(Order.total_price), 0.0),
+            )
+            .filter(
+                Order.created_at >= window_start_dt,
+                Order.created_at < window_end_dt,
+                Order.status != OrderStatus.CANCELLED.value,
+            )
+            .group_by(day_expr)
+            .all()
+        )
+        gmv_map = {
+            str(day): (int(count), round(float(total), 2))
+            for day, count, total in gmv_daily_rows
+        }
+        signup_day_expr = func.date(Seller.created_at, *sqlite_shift_modifiers())
+        signup_day_rows = (
+            db.query(signup_day_expr, func.count(Seller.id))
+            .filter(
+                Seller.role == "seller",
+                Seller.created_at >= window_start_dt,
+                Seller.created_at < window_end_dt,
+            )
+            .group_by(signup_day_expr)
+            .all()
+        )
+        signup_map = {str(day): int(count) for day, count in signup_day_rows}
+        # Paid-Pro money by day, from the ledger
+        sub_day_map: dict[str, float] = {}
+        for created_at, months in paid_events:
+            if window_start_dt <= created_at < window_end_dt:
+                key = to_business_time(as_aware(created_at)).strftime("%Y-%m-%d")
+                sub_day_map[key] = sub_day_map.get(key, 0.0) + PRO_PRICES.get(months, 0)
+
+        # Shared series of day keys — one pass builds all three series
+        day_keys = [(window_start + timedelta(days=i)).isoformat() for i in range(window_days)]
+        revenue_monthly = [
+            ChartBucket(
+                date=key,
+                month=key,
+                count=gmv_map.get(key, (0, 0.0))[0],
+                value=gmv_map.get(key, (0, 0.0))[1],
+            )
+            for key in day_keys
+        ]
+        sellers_monthly = [
+            ChartBucket(
+                date=key,
+                month=key,
+                count=signup_map.get(key, 0),
+                value=signup_map.get(key, 0),
+            )
+            for key in day_keys
+        ]
+        subscription_monthly = [
+            ChartBucket(
+                date=key,
+                month=key,
+                count=0,
+                value=round(sub_day_map.get(key, 0.0), 2),
+            )
+            for key in day_keys
+        ]
     else:
-        start_month_index = now_local.year * 12 + (now_local.month - 1) - 11
-        end_month_index = now_local.year * 12 + (now_local.month - 1)
-    # Cap: at most 12 buckets ending on the series' end month (a
-    # >1-year window still shows the most recent year)
-    first_index = max(start_month_index, end_month_index - 11)
-    back_year, back_month = divmod(first_index, 12)
-    first_bucket_start = (
-        datetime(back_year, back_month + 1, 1, tzinfo=business_tz)
-        .astimezone(timezone.utc)
-        .replace(tzinfo=None)
-    )
-    gmv_rows = (
-        db.query(
-            month_expr,
-            func.count(Order.id),
-            func.coalesce(func.sum(Order.total_price), 0.0),
+        # Month buckets. Scope rule: the window's own months when it
+        # spans 2+ calendar months; trailing 12 months otherwise (the
+        # window is year-wide here, so this is just a safety clamp).
+        if explicit_range:
+            start_local = to_business_time(window_start_dt.replace(tzinfo=timezone.utc))
+            s_idx = start_local.year * 12 + (start_local.month - 1)
+            end_local = to_business_time(window_end_dt.replace(tzinfo=timezone.utc))
+            e_idx = end_local.year * 12 + (end_local.month - 1)
+            if e_idx > s_idx:  # 2+ calendar months → scope the series
+                start_month_index, end_month_index = s_idx, e_idx
+            else:  # single-month window → keep the 12-month context
+                start_month_index, end_month_index = now_month_index - 11, now_month_index
+        else:
+            start_month_index, end_month_index = now_month_index - 11, now_month_index
+        # Cap: at most 12 buckets ending on the series' end month (a
+        # >1-year window still shows the most recent year)
+        first_index = max(start_month_index, end_month_index - 11)
+        back_year, back_month = divmod(first_index, 12)
+        first_bucket_start = (
+            datetime(back_year, back_month + 1, 1, tzinfo=business_tz)
+            .astimezone(timezone.utc)
+            .replace(tzinfo=None)
         )
-        .filter(
-            Order.created_at >= first_bucket_start,
-            Order.status != OrderStatus.CANCELLED.value,
+        month_expr = func.strftime("%Y-%m", Order.created_at, *sqlite_shift_modifiers())
+        gmv_rows = (
+            db.query(
+                month_expr,
+                func.count(Order.id),
+                func.coalesce(func.sum(Order.total_price), 0.0),
+            )
+            .filter(
+                Order.created_at >= first_bucket_start,
+                Order.status != OrderStatus.CANCELLED.value,
+            )
+            .group_by(month_expr)
+            .all()
         )
-        .group_by(month_expr)
-        .all()
-    )
-    gmv_map = {
-        str(month): (int(count), round(float(total), 2)) for month, count, total in gmv_rows
-    }
+        gmv_map = {
+            str(month): (int(count), round(float(total), 2))
+            for month, count, total in gmv_rows
+        }
 
-    seller_month_expr = func.strftime("%Y-%m", Seller.created_at, *sqlite_shift_modifiers())
-    signup_rows = (
-        db.query(seller_month_expr, func.count(Seller.id))
-        .filter(
-            Seller.role == "seller",
-            Seller.created_at >= first_bucket_start,
+        seller_month_expr = func.strftime("%Y-%m", Seller.created_at, *sqlite_shift_modifiers())
+        signup_rows = (
+            db.query(seller_month_expr, func.count(Seller.id))
+            .filter(
+                Seller.role == "seller",
+                Seller.created_at >= first_bucket_start,
+            )
+            .group_by(seller_month_expr)
+            .all()
         )
-        .group_by(seller_month_expr)
-        .all()
-    )
-    signup_map = {str(month): int(count) for month, count in signup_rows}
+        signup_map = {str(month): int(count) for month, count in signup_rows}
 
-    # Build the month series covering the window (oldest first)
-    months_series = []
-    cursor = first_index
-    while cursor <= end_month_index:
-        year, month0 = divmod(cursor, 12)
-        key = f"{year:04d}-{month0 + 1:02d}"
-        count, value = gmv_map.get(key, (0, 0.0))
-        months_series.append(MonthValue(month=key, count=count, value=value))
-        cursor += 1
-    revenue_monthly = months_series
-
-    subscription_monthly = [
-        MonthValue(
-            month=m.month,
-            count=0,
-            value=round(sub_month_map.get(m.month, 0.0), 2),
-        )
-        for m in months_series
-    ]
-    sellers_monthly = [
-        MonthCount(month=m.month, count=signup_map.get(m.month, 0)) for m in months_series
-    ]
+        # Build the month series covering the window (oldest first)
+        months_series: list[ChartBucket] = []
+        cursor = first_index
+        while cursor <= end_month_index:
+            year, month0 = divmod(cursor, 12)
+            key = f"{year:04d}-{month0 + 1:02d}"
+            count, value = gmv_map.get(key, (0, 0.0))
+            months_series.append(
+                ChartBucket(month=key, count=count, value=value)
+            )
+            cursor += 1
+        revenue_monthly = months_series
+        subscription_monthly = [
+            ChartBucket(
+                month=m.month,
+                count=0,
+                value=round(sub_month_map.get(m.month, 0.0), 2),
+            )
+            for m in months_series
+        ]
+        sellers_monthly = [
+            ChartBucket(month=m.month, count=signup_map.get(m.month, 0), value=signup_map.get(m.month, 0))
+            for m in months_series
+        ]
 
     return {
         "total_sellers": len(shops),

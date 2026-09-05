@@ -318,17 +318,47 @@ def test_platform_stats_chart_series_shapes(client, admin_headers, auth_headers,
     assert len(client.get("/admin/stats?days=7", headers=admin_headers).json()["orders_daily"]) == 7
     assert len(client.get("/admin/stats?days=90", headers=admin_headers).json()["orders_daily"]) == 90
     assert len(client.get("/admin/stats?days=9999", headers=admin_headers).json()["orders_daily"]) == 90
-    # 12 monthly buckets, oldest first, current month last
-    assert len(stats["revenue_monthly"]) == 12
-    assert len(stats["sellers_monthly"]) == 12
-    assert len(stats["subscription_monthly"]) == 12
-    months = [m["month"] for m in stats["revenue_monthly"]]
-    assert months == sorted(months)
-    assert [m["month"] for m in stats["subscription_monthly"]] == months
-    # The current month (Asia/Dhaka) holds the fresh order's GMV
+
+    # The money/growth series follow the SAME filter with daily
+    # granularity for the default (<= 90 day) window — one bucket per
+    # day, matching the orders chart exactly
+    assert len(stats["revenue_monthly"]) == 30
+    assert len(stats["sellers_monthly"]) == 30
+    assert len(stats["subscription_monthly"]) == 30
+    keys = [b["date"] for b in stats["revenue_monthly"]]
+    assert keys == sorted(keys)
+    assert [b["date"] for b in stats["subscription_monthly"]] == keys
+    assert keys[-1] == stats["orders_daily"][-1]["date"]
+    # Today's bucket (Asia/Dhaka) holds the fresh order's GMV
     assert stats["revenue_monthly"][-1]["value"] >= 1400
     # And the fresh signup
     assert stats["sellers_monthly"][-1]["count"] >= 1
+
+
+def test_platform_stats_wide_window_monthly_series(client, admin_headers, auth_headers, seller, order):
+    """A window wider than 90 days (the year presets) switches the
+    money/growth series to monthly buckets, scoped to the window."""
+    from datetime import date as date_cls
+
+    from app.timezone import business_today
+
+    end = business_today()
+    start = date_cls(end.year, 1, 1)
+    stats = client.get(
+        f"/admin/stats?start={start.isoformat()}&end={end.isoformat()}",
+        headers=admin_headers,
+    ).json()
+    # Monthly keys, oldest first, all inside the window's months
+    buckets = stats["revenue_monthly"]
+    assert len(buckets) >= 2
+    keys = [b["month"] for b in buckets]
+    assert keys == sorted(keys)
+    assert keys[-1] == f"{end.year:04d}-{end.month:02d}"
+    assert keys[0] == f"{start.year:04d}-{start.month:02d}"
+    assert all(b["date"] is None for b in buckets)
+    # The fresh order lands in the window's last month
+    assert buckets[-1]["value"] >= 1400
+    assert stats["sellers_monthly"][-1]["count"] >= 1  # the fresh signup
 
 
 # ---------- Stats: custom date range ----------
@@ -405,8 +435,8 @@ def test_platform_stats_custom_range_excludes_today(client, admin_headers, auth_
 
 
 def test_subscription_monthly_tracks_paid_grants(client, admin_headers, seller):
-    """A paid activation lands in the current month's bucket; comp
-    grants never do."""
+    """A paid activation lands in today's bucket (daily granularity on
+    the default window); comp grants never do."""
     before = client.get("/admin/stats", headers=admin_headers).json()
     client.patch(
         f"/admin/sellers/{seller['id']}/plan",
@@ -419,7 +449,7 @@ def test_subscription_monthly_tracks_paid_grants(client, admin_headers, seller):
         headers=admin_headers,
     )
     stats = client.get("/admin/stats", headers=admin_headers).json()
-    # Current month gained only the paid 6-month price
+    # Today's bucket gained only the paid 6-month price
     assert (
         stats["subscription_monthly"][-1]["value"]
         == before["subscription_monthly"][-1]["value"] + 1999
