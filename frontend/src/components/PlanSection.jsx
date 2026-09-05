@@ -11,8 +11,8 @@ const PAYMENT_INSTRUCTIONS =
   "the request below with your transaction ID. We'll activate Pro after " +
   "verifying the payment (usually within a few hours).";
 
-/** Must match the backend's free_plan_monthly_orders setting. */
-const FREE_MONTHLY_ORDERS = 15;
+/** Must match the backend's free_plan_orders setting. */
+const FREE_PLAN_ORDERS = 15;
 
 const STATUS_LABELS = {
   pending: { text: "Pending review", className: "upgrade-status--pending" },
@@ -26,6 +26,16 @@ const EVENT_LABELS = {
   renewed: { text: "Pro renewed", className: "upgrade-status--approved" },
   cancelled: { text: "Pro cancelled", className: "upgrade-status--rejected" },
 };
+
+function formatDateTime(value) {
+  return parseServerDate(value).toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 function formatDate(value) {
   return parseServerDate(value).toLocaleDateString(undefined, {
@@ -75,16 +85,27 @@ export default function PlanSection() {
   const chosen = PRO_OPTIONS.find((o) => o.months === selected);
 
   // One timeline: upgrade requests + subscription events (activation,
-  // renewal, cancellation), newest first. IDs are namespaced so React
-  // never reuses a key across the two kinds of rows.
+  // renewal, cancellation), newest first. An approved request and its
+  // ledger event (Pro activated/renewed) are the SAME moment recorded
+  // by two systems — show it once, as the richer event row. Pending
+  // and rejected requests have no event, so they stand alone.
+  const handledRequestIds = new Set(
+    events
+      .filter((e) => e.event === "subscribed" || e.event === "renewed")
+      .map((e) => e.request_id)
+      .filter((id) => id != null)
+  );
+
   const history = [
-    ...requests.map((r) => ({
-      key: `request-${r.id}`,
-      when: r.handled_at || r.created_at,
-      left: `${r.months} month${r.months === 1 ? "" : "s"}`,
-      status: STATUS_LABELS[r.status] ?? STATUS_LABELS.pending,
-      date: r.handled_at || r.created_at,
-    })),
+    ...requests
+      .filter((r) => !handledRequestIds.has(r.id))
+      .map((r) => ({
+        key: `request-${r.id}`,
+        when: r.handled_at || r.created_at,
+        left: `${r.months} month${r.months === 1 ? "" : "s"}`,
+        status: STATUS_LABELS[r.status] ?? STATUS_LABELS.pending,
+        date: r.handled_at || r.created_at,
+      })),
     ...events.map((e) => {
       const label = EVENT_LABELS[e.event] ?? {
         text: e.event,
@@ -133,7 +154,7 @@ export default function PlanSection() {
     const confirmed = window.confirm(
       "Cancel your Pro subscription?\n\n" +
         "• Your Pro status ends immediately\n" +
-        `• Your account returns to the Free plan (${FREE_MONTHLY_ORDERS} orders per month)\n` +
+        `• Your account returns to the Free plan (${FREE_PLAN_ORDERS} lifetime free orders)\n` +
         "• Payments already made are not refunded automatically — contact support if needed\n\n" +
         "If you just don't want to renew, you can simply do nothing instead."
     );
@@ -182,7 +203,7 @@ export default function PlanSection() {
         <span className="plan-limit-note">
           {proActive
             ? "Unlimited orders"
-            : `Free plan — ${FREE_MONTHLY_ORDERS} orders/month, unlimited on Pro`}
+            : `Free plan — first ${FREE_PLAN_ORDERS} orders, unlimited on Pro`}
         </span>
       </div>
 
@@ -280,7 +301,7 @@ export default function PlanSection() {
                 <span className={`upgrade-status ${entry.status.className}`}>
                   {entry.status.text}
                 </span>
-                <span className="upgrade-history-date">{formatDate(entry.date)}</span>
+                <span className="upgrade-history-date">{formatDateTime(entry.date)}</span>
               </li>
             ))}
           </ul>

@@ -33,7 +33,6 @@ from app.schemas import (
 from app.timezone import (
     business_today,
     day_bounds_utc,
-    month_start_utc,
     sqlite_shift_modifiers,
     to_business_time,
 )
@@ -102,18 +101,17 @@ def _get_owned_order(order_id: int, seller: Seller, db: Session) -> Order:
     return order
 
 
-def _month_order_count(seller: Seller, db: Session) -> int:
-    """Orders this seller received since the start of the current month
-    (business timezone — the meter resets at local midnight on the 1st).
+def _lifetime_order_count(seller: Seller, db: Session) -> int:
+    """Non-cancelled orders this seller has EVER received — the free
+    plan's allowance is one-time, not monthly.
 
     Cancelled orders don't count: a seller who cancels a mistake or
-    form spam gets that quota unit back.
+    form spam gets that allowance unit back.
     """
     return (
         db.query(func.count(Order.id))
         .filter(
             Order.seller_id == seller.id,
-            Order.created_at >= month_start_utc(),
             Order.status != OrderStatus.CANCELLED.value,
         )
         .scalar()
@@ -121,9 +119,10 @@ def _month_order_count(seller: Seller, db: Session) -> int:
 
 
 def _check_plan_limit(seller: Seller, db: Session) -> None:
-    """Free plan: a monthly order allowance (business month — resets at
-    local midnight on the 1st). Pro is unlimited; admins don't place
-    orders at all (their accounts are platform accounts, not shops)."""
+    """Free plan: a one-time order allowance (15 orders, ever). Once
+    it's used up the seller needs Pro to keep receiving orders. Pro is
+    unlimited; admins don't place orders at all (their accounts are
+    platform accounts, not shops)."""
     if seller.role == "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -133,14 +132,14 @@ def _check_plan_limit(seller: Seller, db: Session) -> None:
     if pro_plan_active(seller):
         return
 
-    used = _month_order_count(seller, db)
-    if used >= settings.free_plan_monthly_orders:
+    used = _lifetime_order_count(seller, db)
+    if used >= settings.free_plan_orders:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=(
-                f"You've used all {settings.free_plan_monthly_orders} free orders this month. "
+                f"You've used all {settings.free_plan_orders} free orders. "
                 "Upgrade to Pro for unlimited orders — "
-                f"or wait for the reset on {month_start_utc() + timedelta(days=31):%B 1, %Y}."
+                "your existing orders and data stay exactly as they are."
             ),
         )
 
@@ -475,11 +474,13 @@ def stats_summary(
         "revenue": round(revenue, 2),
         "status_counts": status_counts,
         "daily": daily,
-        "month_orders": _month_order_count(seller, db),
-        # Free plan allowance this month (Pro sellers see null = unlimited)
+        # The free plan meter: non-cancelled orders this account has
+        # ever placed (one-time allowance, not monthly)
+        "month_orders": _lifetime_order_count(seller, db),
+        # Free plan allowance (Pro sellers see null = unlimited)
         "plan_limit": None
         if pro_plan_active(seller) or seller.role == "admin"
-        else settings.free_plan_monthly_orders,
+        else settings.free_plan_orders,
     }
 
 

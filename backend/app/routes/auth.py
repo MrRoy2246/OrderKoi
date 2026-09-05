@@ -308,7 +308,7 @@ def cancel_subscription(
 ) -> Seller:
     """Seller-initiated cancellation: Pro ends right away (no refund —
     manual bKash/Nagad payments are handled case by case) and the
-    account drops back to the Free plan's monthly order allowance."""
+    account drops back to the Free plan's one-time order allowance."""
     if seller.role == "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -344,7 +344,7 @@ def cancel_subscription(
             body=(
                 "A seller cancelled their Pro subscription.\n\n"
                 f"Store: {seller.store_name} ({seller.email})\n"
-                "The account is back on the Free plan (15 orders/month).\n\n"
+                "The account is back on the Free plan.\n\n"
                 "Might be worth a friendly check-in to see what went wrong.\n\n"
                 "— OrderKoi"
             ),

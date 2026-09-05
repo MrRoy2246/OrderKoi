@@ -177,11 +177,11 @@ def test_submit_order_isolated_between_stores(client, seller, form_payload, auth
     assert orders.json()["total"] == 0
 
 
-# ---------- Free-plan allowance (15/month, unlimited on Pro) ----------
+# ---------- Free-plan allowance (15 one-time, unlimited on Pro) ----------
 
-def test_submit_order_within_monthly_allowance(client, seller, form_payload):
-    """Free stores keep accepting form submissions inside the monthly
-    allowance — a healthy store never notices it."""
+def test_submit_order_within_free_allowance(client, seller, form_payload):
+    """A fresh Free store's form keeps accepting submissions inside the
+    one-time allowance — a new seller never notices it."""
     slug = seller["store_slug"]
     for i in range(5):
         response = client.post(f"/public/stores/{slug}/orders", json=form_payload)
@@ -189,10 +189,9 @@ def test_submit_order_within_monthly_allowance(client, seller, form_payload):
 
 
 def test_submit_order_blocked_after_allowance(client, seller, auth_headers, form_payload):
-    """A Free store's form goes quiet for customers once the monthly
+    """A Free store's form goes quiet for customers once the one-time
     allowance is used up — 402, with a professional message."""
     slug = seller["store_slug"]
-    # The conftest `seller` fixture has no orders yet — use all 15
     for _ in range(15):
         response = client.post(f"/public/stores/{slug}/orders", json=form_payload)
         assert response.status_code == 201

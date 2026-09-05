@@ -501,10 +501,10 @@ def test_stats_daily_revenue_excludes_cancelled(client, auth_headers, order):
     assert summary["revenue"] == 0
 
 
-def test_free_plan_monthly_limit(client, auth_headers):
-    """Free sellers get a monthly order allowance (15). The 15th order
-    of the month is accepted, the 16th is blocked with a clear upgrade
-    message; the allowance resets at the start of each business month."""
+def test_free_plan_lifetime_limit(client, auth_headers):
+    """The free plan is a one-time allowance (15 orders, ever — no
+    monthly reset). The 15th order is accepted, the 16th is blocked
+    with a clear upgrade message; cancelling an order frees the unit."""
     payload = {
         "customer_name": "Limit Test",
         "customer_phone": "01800000000",
@@ -517,22 +517,16 @@ def test_free_plan_monthly_limit(client, auth_headers):
         )
         assert response.status_code == 201, f"order {i + 1} should be accepted"
 
-    # The conftest `order` fixture already used one of the allowance,
-    # so this is the 16th non-cancelled order this month
+    # The 16th is held — the allowance never resets
     blocked = client.post("/orders", json=payload, headers=auth_headers)
     assert blocked.status_code == 402
     assert "upgrade to pro" in blocked.json()["detail"].lower()
-
-    # Cancelling an order returns the allowance unit (cancelled orders
-    # don't count toward the limit)
-    cancelled = client.post("/orders", json=payload, headers=auth_headers)
-    assert cancelled.status_code == 402  # still blocked before the cancel
 
     summary = client.get("/orders/stats/summary?range=7d", headers=auth_headers).json()
     assert summary["plan_limit"] == 15
     assert summary["month_orders"] == 15
 
-    # Cancel one of this month's orders and try again — room opens up
+    # Cancel one order and try again — the unit is returned
     orders = client.get("/orders?status=placed", headers=auth_headers).json()["orders"]
     client.patch(
         f"/orders/{orders[0]['id']}/status", json={"status": "cancelled"}, headers=auth_headers
@@ -542,8 +536,8 @@ def test_free_plan_monthly_limit(client, auth_headers):
 
 
 def test_pro_plan_is_uncapped(client, seller, auth_headers, admin_headers):
-    """Pro has no monthly allowance — orders flow without limit and the
-    stats summary reports no cap."""
+    """Pro has no order limit — orders flow without a cap and the
+    stats summary reports no limit."""
     # Upgrade to Pro the normal way
     request = client.post("/auth/upgrade-requests", json={"months": 1}, headers=auth_headers).json()
     client.patch(

@@ -165,6 +165,12 @@ class SubscriptionEvent(Base):
     # Comp (free) grant: admin gave this Pro time for free — comp rows
     # are excluded from subscription revenue totals
     comp: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # The upgrade request that caused this event (None for seller
+    # cancellations and manual admin changes) — lets the seller's
+    # history show an approved request and its activation as ONE row
+    request_id: Mapped[int | None] = mapped_column(
+        ForeignKey("upgrade_requests.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     # human context, e.g. "active until 1 Mar 2027" or "cancelled by seller"
     note: Mapped[str | None] = mapped_column(String(200), nullable=True)
 

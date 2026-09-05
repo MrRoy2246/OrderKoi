@@ -778,13 +778,16 @@ def handle_upgrade_request(
         # seller's current expiry, but this row keeps its own result
         request.granted_until = seller.plan_expires_at
 
-        # Ledger: first approval is a subscription, later ones renewals
+        # Ledger: first approval is a subscription, later ones renewals.
+        # request_id links the event to the request that caused it, so
+        # the seller's history shows the approval as ONE row.
         db.add(
             SubscriptionEvent(
                 seller_id=seller.id,
                 event="renewed" if was_pro else "subscribed",
                 months=request.months,
                 note=f"active until {seller.plan_expires_at.strftime('%d %b %Y')}",
+                request_id=request.id,
             )
         )
 

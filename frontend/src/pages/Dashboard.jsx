@@ -19,8 +19,8 @@ const RANGE_OPTIONS = [
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Must match the backend's free_plan_monthly_orders setting. */
-const FREE_MONTHLY_ORDERS = 15;
+/** Must match the backend's free_plan_orders setting. */
+const FREE_PLAN_ORDERS = 15;
 
 function formatDate(value) {
   if (!value) return null;
@@ -38,8 +38,8 @@ function toDateInput(date) {
 /**
  * The subscription card — the seller always knows exactly where they
  * stand: plan, expiry date, and days remaining on Pro. Clicking it
- * opens the upgrade/renew options in Settings. Free sellers get a
- * monthly order allowance; Pro is unlimited.
+ * opens the upgrade/renew options in Settings. New sellers get a
+ * one-time free order allowance; Pro is unlimited.
  */
 function SubscriptionCard({ seller }) {
   const pro = seller?.plan === "pro";
@@ -66,7 +66,7 @@ function SubscriptionCard({ seller }) {
     subline = `Your subscription ended ${formatDate(expiry)} — renew to keep supporting the platform.`;
   } else {
     headline = "Free plan";
-    subline = `${FREE_MONTHLY_ORDERS} orders per month — unlimited on Pro`;
+    subline = `First ${FREE_PLAN_ORDERS} orders free — unlimited on Pro`;
   }
 
   return (

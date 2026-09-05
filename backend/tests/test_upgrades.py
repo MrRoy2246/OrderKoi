@@ -212,11 +212,20 @@ def test_renewal_stacks_on_active_subscription(client, seller, auth_headers, adm
 
 def test_expired_pro_back_on_free_with_allowance(client, auth_headers):
     """Pro with a past expiry date is effectively Free again — and Free
-    carries the monthly allowance, so order 16 of the month is held."""
+    carries the one-time allowance, so order 16 is held."""
     from datetime import datetime, timezone
 
     from app.models import Seller
     from conftest import TestingSessionLocal
+
+    # Fill most of the allowance while Pro is still 'active'
+    payload = {
+        "customer_name": "Bulk",
+        "customer_phone": "01800000000",
+        "items": [{"name": "X", "quantity": 1, "price": 10}],
+    }
+    for i in range(14):
+        client.post("/orders", json={**payload, "customer_name": f"Bulk {i}"}, headers=auth_headers)
 
     db = TestingSessionLocal()
     try:
@@ -231,18 +240,12 @@ def test_expired_pro_back_on_free_with_allowance(client, auth_headers):
     finally:
         db.close()
 
-    # Expired Pro = Free with its 15-order allowance — the 2nd order
-    # this month (conftest fixture made the 1st) is accepted
-    response = client.post(
-        "/orders",
-        json={
-            "customer_name": "Expired Pro",
-            "customer_phone": "01800000000",
-            "items": [{"name": "X", "quantity": 1, "price": 10}],
-        },
-        headers=auth_headers,
-    )
+    # Expired Pro = Free with its one-time 15-order allowance:
+    # 15th order accepted, 16th held
+    response = client.post("/orders", json=payload, headers=auth_headers)
     assert response.status_code == 201
+    blocked = client.post("/orders", json=payload, headers=auth_headers)
+    assert blocked.status_code == 402
     summary = client.get("/orders/stats/summary", headers=auth_headers).json()
     assert summary["plan_limit"] == 15
 
@@ -287,7 +290,9 @@ def get_events(client, admin_headers, seller_id):
 
 def test_seller_sees_own_history_in_settings(client, seller, auth_headers, admin_headers):
     """Cancellations (and activations/renewals) surface in the seller's
-    own Settings history — not just the admin ledger."""
+    own Settings history — not just the admin ledger. Each approved
+    request carries its request_id so the frontend can show the
+    approval and its activation as ONE row, not two."""
     # Subscribe, renew, then cancel — the full lifecycle
     first = client.post("/auth/upgrade-requests", json={"months": 6}, headers=auth_headers).json()
     client.patch(
@@ -306,6 +311,11 @@ def test_seller_sees_own_history_in_settings(client, seller, auth_headers, admin
     assert [e["event"] for e in events] == ["cancelled", "renewed", "subscribed"]
     assert events[0]["note"] == "cancelled by seller"
     assert events[1]["months"] == 1
+    # The activation/renewal events link back to their requests
+    assert events[1]["request_id"] == second["id"]
+    assert events[2]["request_id"] == first["id"]
+    # A cancellation has no request behind it
+    assert events[0]["request_id"] is None
     # The seller view mirrors the admin ledger for their own account
     admin_view = get_events(client, admin_headers, seller["id"])
     assert [e["event"] for e in admin_view] == [e["event"] for e in events]
@@ -481,8 +491,8 @@ def test_stats_custom_range_validation(client, auth_headers):
 
 def test_stats_include_plan_usage_meter(client, auth_headers, order):
     stats = client.get("/orders/stats/summary", headers=auth_headers).json()
-    # month_orders is the current usage; plan_limit is the Free allowance
-    # (None would mean unlimited — that's Pro's answer, not Free's)
+    # month_orders is the lifetime usage meter; plan_limit is the Free
+    # allowance (None would mean unlimited — that's Pro's answer)
     assert stats["month_orders"] == 1
     assert stats["plan_limit"] == 15
 

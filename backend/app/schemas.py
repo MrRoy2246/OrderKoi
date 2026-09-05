@@ -209,6 +209,9 @@ class SubscriptionEventOut(BaseModel):
     event: Literal["subscribed", "renewed", "cancelled"]
     months: int | None
     comp: bool = False
+    # The upgrade request that caused this event, when there was one —
+    # lets the seller's history dedupe request + activation into one row
+    request_id: int | None = None
     note: str | None
     created_at: datetime
 
@@ -365,5 +368,5 @@ class StatsSummary(BaseModel):
     revenue: float  # non-cancelled orders within the range
     status_counts: dict[str, int]  # within the range
     daily: list[DailyValue]  # one bar per day of the range (max 1 year)
-    month_orders: int  # orders this calendar month (free-plan usage meter)
-    plan_limit: int | None  # monthly cap when on Free; None when on Pro
+    month_orders: int  # lifetime non-cancelled orders (free-plan usage meter)
+    plan_limit: int | None  # one-time allowance when on Free; None when on Pro
