@@ -231,7 +231,7 @@ export const api = {
   },
   admin: {
     sellers: () => request("/admin/sellers"),
-    stats: () => request("/admin/stats"),
+    stats: (params = {}) => request(`/admin/stats${toQueryString(params)}`),
     setPlan: (sellerId, plan, months, comp = false) =>
       request(`/admin/sellers/${sellerId}/plan`, {
         method: "PATCH",

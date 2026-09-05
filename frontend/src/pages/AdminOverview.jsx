@@ -6,12 +6,15 @@ import Icon from "../components/icons";
 import { ErrorState, SkeletonCard } from "../components/States";
 import { formatTk, parseServerDate } from "../utils/orderStatus";
 
-/** The activity-chart window: one row of preset range tabs scoping
- * every chart below it (single source of truth — no per-chart picks). */
+/** The activity-chart window: one row of preset range tabs (plus
+ * custom dates) scoping every daily chart below it. */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const RANGE_TABS = [
-  { days: 7, label: "7 days" },
-  { days: 30, label: "30 days" },
-  { days: 90, label: "90 days" },
+  { kind: "days", days: 7, label: "7 days" },
+  { kind: "days", days: 30, label: "30 days" },
+  { kind: "days", days: 90, label: "90 days" },
+  { kind: "custom", label: "Custom" },
 ];
 
 /** A headline metric — navigates when `to` is given. */
@@ -56,17 +59,65 @@ function StatTile({ icon, label, value, hint, accent, to, title, spark }) {
 }
 
 function formatDate(value) {
-  return parseServerDate(value).toLocaleDateString(undefined, {
+  if (!value) return null;
+  return parseServerDate(`${value}T00:00:00`).toLocaleDateString(undefined, {
     day: "numeric",
     month: "short",
     year: "numeric",
   });
 }
 
+function toDateInput(date) {
+  return date.toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+/** Custom date-range picker — appears when the "Custom" tab is active
+ * (mirrors the seller dashboard's CustomRangePanel). */
+function CustomRangePanel({ start, end, onStart, onEnd, onApply, error }) {
+  const today = toDateInput(new Date());
+  return (
+    <div className="custom-range-panel">
+      <div className="custom-range-field">
+        <label htmlFor="admin_range_start">From</label>
+        <input
+          id="admin_range_start"
+          type="date"
+          max={end || today}
+          value={start}
+          onChange={(e) => onStart(e.target.value)}
+        />
+      </div>
+      <span className="custom-range-sep" aria-hidden="true">
+        <Icon name="arrowRight" size={14} />
+      </span>
+      <div className="custom-range-field">
+        <label htmlFor="admin_range_end">To</label>
+        <input
+          id="admin_range_end"
+          type="date"
+          min={start}
+          max={today}
+          value={end}
+          onChange={(e) => onEnd(e.target.value)}
+        />
+      </div>
+      <button type="button" className="button button--primary button--small" onClick={onApply}>
+        Apply
+      </button>
+      {error && <span className="custom-range-error">{error}</span>}
+    </div>
+  );
+}
+
 /** Platform-owner view: the whole OrderKoi business at a glance. */
 export default function AdminOverview() {
   const navigate = useNavigate();
   const [days, setDays] = useState(30);
+  const [range, setRange] = useState("days"); // "days" | "custom"
+  const [customStart, setCustomStart] = useState(toDateInput(new Date(Date.now() - 29 * DAY_MS)));
+  const [customEnd, setCustomEnd] = useState(toDateInput(new Date()));
+  const [appliedRange, setAppliedRange] = useState(null); // {start, end} once applied
+  const [rangeError, setRangeError] = useState(null);
   const [stats, setStats] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -75,11 +126,11 @@ export default function AdminOverview() {
   // Refetch on window change. The first load shows skeletons; a
   // refetch keeps the previous render on screen (dimmed) so switching
   // windows doesn't flash empty frames — the spec's "hold the frame".
-  const fetchStats = useCallback((newDays) => {
+  const fetchStats = useCallback((params) => {
     setFetching(true);
     setError(null);
     api.admin
-      .stats(newDays)
+      .stats(params)
       .then((data) => {
         setStats(data);
         setLoading(false);
@@ -91,9 +142,33 @@ export default function AdminOverview() {
       .finally(() => setFetching(false));
   }, []);
 
+  // The params for the current window: preset days, or the applied
+  // custom range. Custom only fetches after Apply — no garbage while
+  // the dates are still being picked.
   useEffect(() => {
-    fetchStats(days);
-  }, [days, fetchStats]);
+    if (range === "custom") {
+      if (appliedRange) fetchStats({ start: appliedRange.start, end: appliedRange.end });
+      return;
+    }
+    fetchStats({ days });
+  }, [range, days, appliedRange, fetchStats]);
+
+  function handleApplyCustom() {
+    setRangeError(null);
+    if (!customStart || !customEnd) {
+      setRangeError("Pick both dates.");
+      return;
+    }
+    if (customStart > customEnd) {
+      setRangeError("The start date must be before the end date.");
+      return;
+    }
+    if ((new Date(customEnd) - new Date(customStart)) / DAY_MS + 1 > 366) {
+      setRangeError("Custom ranges can span at most one year.");
+      return;
+    }
+    setAppliedRange({ start: customStart, end: customEnd });
+  }
 
   if (loading) {
     return (
@@ -111,7 +186,7 @@ export default function AdminOverview() {
   if (error && !stats) {
     return (
       <div className="admin-page">
-        <ErrorState message={error} onRetry={() => fetchStats(days)} />
+        <ErrorState message={error} onRetry={() => fetchStats(range === "custom" && appliedRange ? { start: appliedRange.start, end: appliedRange.end } : { days })} />
       </div>
     );
   }
@@ -121,6 +196,13 @@ export default function AdminOverview() {
       ? Math.round((stats.pro_sellers / stats.total_sellers) * 100)
       : 0;
   const monthName = new Date().toLocaleDateString(undefined, { month: "long" });
+
+  const windowLabel =
+    range === "custom"
+      ? appliedRange
+        ? `${formatDate(appliedRange.start)} – ${formatDate(appliedRange.end)}`
+        : "custom range"
+      : `last ${days} days`;
 
   return (
     <div className={`admin-page${fetching ? " admin-page--refetching" : ""}`}>
@@ -228,19 +310,41 @@ export default function AdminOverview() {
           Monthly series (12-month windows) are all-time views, so they
           sit outside the day-window scope. */}
       <div className="measure-tabs admin-range-tabs" role="tablist" aria-label="Activity window">
-        {RANGE_TABS.map((tab) => (
-          <button
-            key={tab.days}
-            type="button"
-            role="tab"
-            aria-selected={days === tab.days}
-            className={`measure-tab${days === tab.days ? " measure-tab--active" : ""}`}
-            onClick={() => setDays(tab.days)}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {RANGE_TABS.map((tab) => {
+          const active =
+            tab.kind === "custom" ? range === "custom" : range === "days" && days === tab.days;
+          return (
+            <button
+              key={tab.label}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              className={`measure-tab${active ? " measure-tab--active" : ""}`}
+              onClick={() => {
+                if (tab.kind === "custom") {
+                  setRange("custom");
+                } else {
+                  setRange("days");
+                  setDays(tab.days);
+                }
+              }}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
+
+      {range === "custom" && (
+        <CustomRangePanel
+          start={customStart}
+          end={customEnd}
+          onStart={setCustomStart}
+          onEnd={setCustomEnd}
+          onApply={handleApplyCustom}
+          error={rangeError}
+        />
+      )}
 
       {/* Platform pulse */}
       <section className="stat-grid">
@@ -268,7 +372,7 @@ export default function AdminOverview() {
         />
         <StatTile
           icon="package"
-          label={`Orders · last ${days} days`}
+          label={`Orders · ${windowLabel}`}
           value={stats.orders_daily.reduce((sum, d) => sum + d.count, 0)}
           hint={`${stats.sellers_with_orders} of ${stats.total_sellers} sellers have orders`}
           accent="blue"
@@ -286,7 +390,7 @@ export default function AdminOverview() {
       {/* Charts — activity (scoped by the window tabs above) */}
       <section className="card">
         <div className="card-header-row">
-          <h3>Orders — last {days} days</h3>
+          <h3>Orders — {windowLabel}</h3>
         </div>
         <BarChart data={stats.orders_daily.map((d) => ({ key: d.date, value: d.count }))} />
       </section>

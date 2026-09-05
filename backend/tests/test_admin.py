@@ -6,6 +6,7 @@ promoted shop owner. Admins manage the platform; sellers run shops.
 """
 
 import uuid
+from datetime import timedelta
 
 import pytest
 
@@ -309,10 +310,14 @@ def test_comp_default_false_and_cumulative_revenue(client, admin_headers, seller
 def test_platform_stats_chart_series_shapes(client, admin_headers, auth_headers, seller, order):
     stats = client.get("/admin/stats", headers=admin_headers).json()
 
-    # 30 daily buckets ending today
+    # 30 daily buckets ending today by default
     assert len(stats["orders_daily"]) == 30
     assert stats["orders_daily"][-1]["count"] >= 1  # the conftest order
 
+    # The days filter scopes the daily series (7 / 90, clamped)
+    assert len(client.get("/admin/stats?days=7", headers=admin_headers).json()["orders_daily"]) == 7
+    assert len(client.get("/admin/stats?days=90", headers=admin_headers).json()["orders_daily"]) == 90
+    assert len(client.get("/admin/stats?days=9999", headers=admin_headers).json()["orders_daily"]) == 90
     # 12 monthly buckets, oldest first, current month last
     assert len(stats["revenue_monthly"]) == 12
     assert len(stats["sellers_monthly"]) == 12
@@ -324,6 +329,79 @@ def test_platform_stats_chart_series_shapes(client, admin_headers, auth_headers,
     assert stats["revenue_monthly"][-1]["value"] >= 1400
     # And the fresh signup
     assert stats["sellers_monthly"][-1]["count"] >= 1
+
+
+# ---------- Stats: custom date range ----------
+
+def test_platform_stats_custom_range_shape(client, admin_headers, seller, order):
+    """A custom range returns exactly one bucket per day, in order,
+    with the fresh order landing on today's (the end date's) bucket."""
+    from datetime import date as date_cls
+
+    from app.timezone import business_today
+
+    end = business_today()
+    start = date_cls.fromordinal(end.toordinal() - 6)
+    stats = client.get(
+        f"/admin/stats?start={start.isoformat()}&end={end.isoformat()}",
+        headers=admin_headers,
+    ).json()
+    daily = stats["orders_daily"]
+    assert len(daily) == 7
+    assert [d["date"] for d in daily] == [
+        date_cls.fromordinal(start.toordinal() + i).isoformat() for i in range(7)
+    ]
+    assert daily[-1]["count"] >= 1  # the conftest order is on today's bucket
+
+
+def test_platform_stats_custom_range_validations(client, admin_headers):
+    """Missing half, reversed order, and >1 year are all 422s."""
+    base = "/admin/stats"
+    # Missing end
+    assert client.get(f"{base}?start=2026-01-01", headers=admin_headers).status_code == 422
+    # Reversed
+    assert (
+        client.get(f"{base}?start=2026-02-01&end=2026-01-01", headers=admin_headers).status_code
+        == 422
+    )
+    # More than a year
+    assert (
+        client.get(
+            f"{base}?start=2024-01-01&end=2026-01-01", headers=admin_headers
+        ).status_code
+        == 422
+    )
+
+
+def test_platform_stats_custom_range_excludes_today(client, admin_headers, auth_headers, seller):
+    """A custom range ending yesterday doesn't see an order placed today —
+    inclusive bounds in the business timezone, no off-by-one. (Shared DB:
+    other tests may have backdated orders inside the window, so the
+    assertion is a before/after delta, not absolute zeros.)"""
+    from datetime import timedelta
+
+    from app.timezone import business_today
+
+    end = business_today() - timedelta(days=1)
+    start = end - timedelta(days=6)
+    query = f"?start={start.isoformat()}&end={end.isoformat()}"
+
+    before = client.get(f"/admin/stats{query}", headers=admin_headers).json()
+    in_window_before = sum(d["count"] for d in before["orders_daily"])
+
+    response = client.post(
+        "/orders",
+        json={
+            "customer_name": "Window Test",
+            "customer_phone": "01800000000",
+            "items": [{"name": "X", "quantity": 1, "price": 10}],
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+
+    after = client.get(f"/admin/stats{query}", headers=admin_headers).json()
+    assert sum(d["count"] for d in after["orders_daily"]) == in_window_before
 
 
 def test_subscription_monthly_tracks_paid_grants(client, admin_headers, seller):

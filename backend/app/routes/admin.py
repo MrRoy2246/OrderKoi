@@ -7,9 +7,9 @@ admin verifies the payment and activates the paid-for duration).
 """
 
 import calendar
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -43,6 +43,7 @@ from app.timezone import (
     business_now,
     business_today,
     business_tz,
+    day_bounds_utc,
     month_start_utc,
     sqlite_shift_modifiers,
     to_business_time,
@@ -117,9 +118,41 @@ def list_sellers(
     summary="Platform-wide statistics",
 )
 def platform_stats(
+    days: int = 30,
+    start: date | None = Query(default=None, description="Custom range start (YYYY-MM-DD, inclusive)"),
+    end: date | None = Query(default=None, description="Custom range end (YYYY-MM-DD, inclusive)"),
     db: Session = Depends(get_db),
     admin: Seller = Depends(get_current_admin),  # noqa: ARG001
 ) -> dict:
+    # The daily chart's window: either a rolling `days` count (7 / 30 /
+    # 90, clamped) or an explicit custom range (start..end inclusive,
+    # at most one year). Custom wins when both are given.
+    today = business_today()
+    if start is not None or end is not None:
+        if start is None or end is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Custom range needs both start and end dates.",
+            )
+        if start > end:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Start date must be before (or equal to) the end date.",
+            )
+        if (end - start).days + 1 > 366:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Custom range can span at most one year.",
+            )
+        window_start, window_end, window_days = start, end, (end - start).days + 1
+    else:
+        days = max(1, min(days, 90))
+        window_start = today - timedelta(days=days - 1)
+        window_end = today
+        window_days = days
+    # Naive UTC boundaries, exactly how created_at is stored
+    window_start_dt, _ = day_bounds_utc(window_start)
+    _, window_end_dt = day_bounds_utc(window_end)
     sellers = db.query(Seller).all()
     seller_ids = [seller.id for seller in sellers]
 
@@ -222,7 +255,8 @@ def platform_stats(
 
     # ---- Chart series (business-timezone buckets, oldest first) ----
 
-    # Orders per day, last 30 days
+    # Orders per day, over the window chosen above (7 / 30 / 90-day
+    # presets or a custom range — the dashboard's range filter).
     day_expr = func.date(Order.created_at, *sqlite_shift_modifiers())
     daily_rows = (
         db.query(
@@ -231,7 +265,8 @@ def platform_stats(
             func.coalesce(func.sum(Order.total_price), 0.0),
         )
         .filter(
-            Order.created_at >= utcnow() - timedelta(days=30),
+            Order.created_at >= window_start_dt,
+            Order.created_at < window_end_dt,
             Order.status != OrderStatus.CANCELLED.value,
         )
         .group_by(day_expr)
@@ -242,10 +277,10 @@ def platform_stats(
     }
     orders_daily = [
         DailyCount(
-            date=(business_today() - timedelta(days=29 - i)).isoformat(),
-            count=daily_map.get((business_today() - timedelta(days=29 - i)).isoformat(), (0, 0.0))[0],
+            date=(window_start + timedelta(days=i)).isoformat(),
+            count=daily_map.get((window_start + timedelta(days=i)).isoformat(), (0, 0.0))[0],
         )
-        for i in range(30)
+        for i in range(window_days)
     ]
 
     # Month buckets for GMV + signups: group by business-local YYYY-MM.
