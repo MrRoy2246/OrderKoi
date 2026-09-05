@@ -3,10 +3,10 @@ import { useAuth } from "../auth/AuthContext";
 import Icon from "./icons";
 
 /**
- * The free-plan allowance as a refined usage meter: a slim bar with
- * hairline tick marks at every 5th order, a gradient fill, and the
- * remaining count as a right-aligned chip. Past 75% used the fill
- * turns amber (a calm heads-up, never an alarm). Pro
+ * The free-plan allowance as a minimal one-line usage meter: label,
+ * bar, and remaining count inline — no head row, no note line. The
+ * bar carries hairline ticks at every 5th order; past 75% used the
+ * fill turns amber (a calm heads-up, never an alarm). Pro
  * (plan_limit == null) shows nothing.
  */
 export function FreeOrderMeter({ limit, used, compact = false }) {
@@ -19,20 +19,17 @@ export function FreeOrderMeter({ limit, used, compact = false }) {
   const tickIndexes = [];
   for (let i = 5; i < limit; i += 5) tickIndexes.push(i);
 
+  const label = compact
+    ? `${remaining === 1 ? "1 free order left" : `${remaining} free orders left`}`
+    : `${used} of ${limit} free orders used`;
+
   return (
     <div
       className={`free-meter${warn ? " free-meter--warn" : ""}${compact ? " free-meter--compact" : ""}`}
       role="status"
       aria-label={`${remaining} of ${limit} free orders left`}
     >
-      {!compact && (
-        <div className="free-meter-head">
-          <span className="free-meter-label">Free orders</span>
-          <span className="free-meter-chip">
-            {remaining === 1 ? "1 left" : `${remaining} left`}
-          </span>
-        </div>
-      )}
+      <span className="free-meter-text">{label}</span>
       <div className="free-meter-track">
         <div className="free-meter-fill" style={{ width: `${pct}%` }} />
         {tickIndexes.map((i) => (
@@ -43,17 +40,7 @@ export function FreeOrderMeter({ limit, used, compact = false }) {
           />
         ))}
       </div>
-      {compact ? (
-        <span className="free-meter-note">
-          {remaining === 1 ? "1 free order left" : `${remaining} free orders left`}
-          <span className="free-meter-note-detail"> · {used} of {limit}</span>
-        </span>
-      ) : (
-        <span className="free-meter-note">
-          {used} of {limit} used
-          {warn && <span className="free-meter-note-detail"> — almost there</span>}
-        </span>
-      )}
+      <span className="free-meter-count">{remaining}</span>
     </div>
   );
 }

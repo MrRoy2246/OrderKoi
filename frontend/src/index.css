@@ -540,52 +540,29 @@ textarea {
   flex-wrap: wrap;
 }
 
-/* Refined free-order usage meter — a slim bar with hairline tick
-   marks, gradient fill, and a right-aligned "N left" chip. The same
-   component scales down to a compact row for the Orders page. */
+/* Minimal free-order usage meter — one line: label · bar · count.
+   The bar keeps the gradient fill and hairline 5th-order ticks; the
+   count at the end is the remaining number, nothing else. */
 .free-meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   max-width: 420px;
 }
 
-.free-meter-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 6px;
-  gap: 10px;
-}
-
-.free-meter-label {
-  font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.free-meter-chip {
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--ink);
-  background: var(--surface-sunken);
-  border: 1px solid var(--border);
-  padding: 2px 9px;
-  border-radius: var(--radius-pill);
+.free-meter-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
   white-space: nowrap;
-}
-
-.free-meter--warn .free-meter-chip {
-  color: #8a5506;
-  background: var(--warning-tint);
-  border-color: rgba(232, 147, 12, 0.3);
 }
 
 .free-meter-track {
   position: relative;
-  height: 8px;
+  flex: 1;
+  height: 6px;
   border-radius: var(--radius-pill);
   background: var(--surface-sunken);
-  box-shadow: inset 0 1px 2px rgba(28, 25, 23, 0.06);
   overflow: hidden;
 }
 
@@ -593,7 +570,6 @@ textarea {
   height: 100%;
   border-radius: var(--radius-pill);
   background: linear-gradient(90deg, #f9773e, var(--primary));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
   transition: width 400ms cubic-bezier(0.25, 0.7, 0.3, 1);
 }
 
@@ -614,33 +590,24 @@ textarea {
   background: rgba(255, 255, 255, 0.4);
 }
 
-.free-meter-note {
-  display: block;
-  margin-top: 6px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.free-meter-note-detail {
+.free-meter-count {
+  font-size: 12px;
+  font-weight: 700;
   color: var(--muted);
-  font-weight: 500;
+  min-width: 14px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Compact variant — the Orders-page row: smaller track, inline note */
+.free-meter--warn .free-meter-count {
+  color: #b46f0a;
+}
+
+/* Compact variant — the Orders-page row: full width, inline note */
 .free-meter--compact {
   max-width: none;
   flex: 1;
   min-width: 160px;
-}
-
-.free-meter--compact .free-meter-track {
-  height: 6px;
-}
-
-.free-meter--compact .free-meter-note {
-  margin-top: 4px;
-  font-size: 12px;
 }
 
 .free-allowance-note a {
