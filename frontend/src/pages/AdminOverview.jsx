@@ -1,385 +1,415 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { api, getErrorMessage } from "../api/client";
-import { BarChart, DonutChart, Sparkline } from "../components/Charts";
+import { ActivityFeed, KpiCard } from "../components/AdminDashboard";
+import { BarChart, DonutChart } from "../components/Charts";
+import { DashboardFilters, rangeLabel, rangeToWindow } from "../components/DashboardFilters";
 import Icon from "../components/icons";
-import { ErrorState, SkeletonCard } from "../components/States";
+import { SkeletonCard, SkeletonRows } from "../components/States";
 import { formatTk, parseServerDate } from "../utils/orderStatus";
 
-/** The activity-chart window: one row of preset range tabs (plus
- * custom dates) scoping every daily chart below it. */
-const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_RANGE = "30d";
 
-const RANGE_TABS = [
-  { kind: "days", days: 7, label: "7 days" },
-  { kind: "days", days: 30, label: "30 days" },
-  { kind: "days", days: 90, label: "90 days" },
-  { kind: "custom", label: "Custom" },
-];
-
-/** A headline metric — navigates when `to` is given. */
-function StatTile({ icon, label, value, hint, accent, to, title, spark }) {
-  const navigate = useNavigate();
-  const content = (
-    <>
-      <span className={`stat-icon stat-icon--${accent}`}>
-        <Icon name={icon} size={21} />
-      </span>
-      <div>
-        <span className="stat-value">{value}</span>
-        <span className="stat-label">{label}</span>
-        {hint && <span className="stat-hint">{hint}</span>}
-      </div>
-      {spark && spark.length > 1 && <Sparkline data={spark} />}
-      {to && (
-        <span className="stat-go" aria-hidden="true">
-          <Icon name="arrowRight" size={16} />
-        </span>
-      )}
-    </>
-  );
-
-  if (to) {
-    return (
-      <article
-        className="stat-card stat-card--clickable"
-        role="link"
-        tabIndex={0}
-        title={title}
-        onClick={() => navigate(to)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") navigate(to);
-        }}
-      >
-        {content}
-      </article>
-    );
-  }
-  return <article className="stat-card">{content}</article>;
-}
-
-function formatDate(value) {
-  if (!value) return null;
-  return parseServerDate(`${value}T00:00:00`).toLocaleDateString(undefined, {
+/** "Sep 4, 2026" — handles full ISO datetimes AND date-only strings
+ * (the old local helper smashed "T00:00:00" onto datetimes → Invalid
+ * Date; this is the shared replacement). */
+function formatDate(iso) {
+  if (!iso) return "—";
+  const parsed = parseServerDate(iso);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return parsed.toLocaleDateString(undefined, {
     day: "numeric",
     month: "short",
     year: "numeric",
   });
 }
 
-function toDateInput(date) {
-  return date.toISOString().slice(0, 10); // YYYY-MM-DD
+/** One analytics section: title, optional meta row, chart. Sections
+ * render independently — one failed API never blanks its neighbors. */
+function ChartCard({ title, meta, tabs, activeTab, onTab, children, error, onRetry, footer }) {
+  return (
+    <section className="card chart-card">
+      <div className="card-header-row">
+        <h3>{title}</h3>
+        {meta && <span className="chart-card-meta">{meta}</span>}
+        {tabs && (
+          <div className="measure-tabs" role="tablist" aria-label={`${title} measure`}>
+            {tabs.map((tab) => (
+              <button
+                key={tab.value}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab.value}
+                className={`measure-tab${activeTab === tab.value ? " measure-tab--active" : ""}`}
+                onClick={() => onTab(tab.value)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {error ? (
+        <div className="section-error">
+          <p>{error}</p>
+          {onRetry && (
+            <button type="button" className="button button--outline button--small" onClick={onRetry}>
+              <Icon name="refresh" size={14} />
+              Try again
+            </button>
+          )}
+        </div>
+      ) : (
+        children
+      )}
+      {footer && !error && <p className="chart-card-foot">{footer}</p>}
+    </section>
+  );
 }
 
-/** Custom date-range picker — appears when the "Custom" tab is active
- * (mirrors the seller dashboard's CustomRangePanel). */
-function CustomRangePanel({ start, end, onStart, onEnd, onApply, error }) {
-  const today = toDateInput(new Date());
+/** Newest-sellers table — columns mapped to what /admin/sellers
+ * actually returns (store, plan, orders, revenue, joined). */
+function NewestSellers({ sellers, loading, error, onRetry }) {
+  if (loading) {
+    return (
+      <section className="card">
+        <div className="card-header-row">
+          <h3>Newest sellers</h3>
+        </div>
+        <SkeletonRows rows={5} />
+      </section>
+    );
+  }
+  if (error) {
+    return (
+      <section className="card">
+        <div className="card-header-row">
+          <h3>Newest sellers</h3>
+        </div>
+        <div className="section-error">
+          <p>{error}</p>
+          <button type="button" className="button button--outline button--small" onClick={onRetry}>
+            <Icon name="refresh" size={14} />
+            Try again
+          </button>
+        </div>
+      </section>
+    );
+  }
+  const shops = sellers
+    .filter((s) => s.role !== "admin")
+    .sort((a, b) => b.created_at?.localeCompare(a.created_at ?? "") ?? 0)
+    .slice(0, 5);
+
   return (
-    <div className="custom-range-panel">
-      <div className="custom-range-field">
-        <label htmlFor="admin_range_start">From</label>
-        <input
-          id="admin_range_start"
-          type="date"
-          max={end || today}
-          value={start}
-          onChange={(e) => onStart(e.target.value)}
-        />
+    <section className="card">
+      <div className="card-header-row">
+        <h3>Newest sellers</h3>
+        <Link to="/admin/sellers" className="card-header-link">
+          View all
+          <Icon name="arrowRight" size={13} />
+        </Link>
       </div>
-      <span className="custom-range-sep" aria-hidden="true">
-        <Icon name="arrowRight" size={14} />
-      </span>
-      <div className="custom-range-field">
-        <label htmlFor="admin_range_end">To</label>
-        <input
-          id="admin_range_end"
-          type="date"
-          min={start}
-          max={today}
-          value={end}
-          onChange={(e) => onEnd(e.target.value)}
-        />
-      </div>
-      <button type="button" className="button button--primary button--small" onClick={onApply}>
-        Apply
-      </button>
-      {error && <span className="custom-range-error">{error}</span>}
-    </div>
+      {shops.length === 0 ? (
+        <p className="muted-note">No sellers yet — share your signup link.</p>
+      ) : (
+        <div className="table-wrap">
+          <table className="orders-table newest-sellers-table">
+            <thead>
+              <tr>
+                <th>Seller</th>
+                <th>Plan</th>
+                <th>Orders</th>
+                <th>Revenue</th>
+                <th>Joined</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shops.map((shop) => (
+                <tr key={shop.id}>
+                  <td className="td-strong" data-label="Seller">{shop.store_name}</td>
+                  <td data-label="Plan">
+                    <span className={`plan-chip${shop.plan === "pro" ? " plan-chip--pro" : ""}`}>
+                      {shop.plan === "pro" ? (
+                        <>
+                          <Icon name="sparkles" size={14} className="plan-chip-icon" />
+                          Pro
+                        </>
+                      ) : (
+                        "Free"
+                      )}
+                    </span>
+                  </td>
+                  <td className="td-strong" data-label="Orders">{shop.orders_count}</td>
+                  <td className="td-strong" data-label="Revenue">{formatTk(shop.revenue)}</td>
+                  <td className="td-muted" data-label="Joined" title={formatDate(shop.created_at)}>
+                    {formatDate(shop.created_at)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 
 /** Platform-owner view: the whole OrderKoi business at a glance. */
 export default function AdminOverview() {
-  const navigate = useNavigate();
-  const [days, setDays] = useState(30);
-  const [range, setRange] = useState("days"); // "days" | "custom"
-  const [customStart, setCustomStart] = useState(toDateInput(new Date(Date.now() - 29 * DAY_MS)));
-  const [customEnd, setCustomEnd] = useState(toDateInput(new Date()));
-  const [appliedRange, setAppliedRange] = useState(null); // {start, end} once applied
-  const [rangeError, setRangeError] = useState(null);
-  const [stats, setStats] = useState(null);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [fetching, setFetching] = useState(false);
+  // ---- Global date filter (the only dimension the stats API scopes) ----
+  const [range, setRange] = useState(DEFAULT_RANGE);
+  const [custom, setCustom] = useState(null); // {start, end} once applied
 
-  // Refetch on window change. The first load shows skeletons; a
-  // refetch keeps the previous render on screen (dimmed) so switching
-  // windows doesn't flash empty frames — the spec's "hold the frame".
-  const fetchStats = useCallback((params) => {
-    setFetching(true);
-    setError(null);
+  // ---- Three independent data sources: one failure never blanks
+  // the page, and each section shows its own retry. ----
+  const [stats, setStats] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState(null);
+  const [statsFetching, setStatsFetching] = useState(false);
+
+  const [sellers, setSellers] = useState(null);
+  const [sellersLoading, setSellersLoading] = useState(true);
+  const [sellersError, setSellersError] = useState(null);
+
+  const [events, setEvents] = useState(null);
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventsError, setEventsError] = useState(null);
+
+  // Sellers' income measure: revenue, order count, or average order
+  // value (AOV = revenue / orders per month — derived, not stored)
+  const [incomeMeasure, setIncomeMeasure] = useState("revenue");
+
+  // The window a fetch stands for — a custom range only counts once
+  // applied; while dates are being picked the last window stays on
+  // screen (no garbage fetches).
+  const window_ = range === "custom" && !custom ? rangeToWindow(DEFAULT_RANGE) : rangeToWindow(range, custom);
+
+  const fetchStats = useCallback((win) => {
+    setStatsFetching(true);
+    setStatsError(null);
     api.admin
-      .stats(params)
+      .stats(win ? { start: win.start, end: win.end } : {})
       .then((data) => {
         setStats(data);
-        setLoading(false);
+        setStatsLoading(false);
       })
       .catch((err) => {
-        setError(getErrorMessage(err, "Could not load platform stats."));
-        setLoading(false);
+        setStatsError(getErrorMessage(err, "Could not load platform stats."));
+        setStatsLoading(false);
       })
-      .finally(() => setFetching(false));
+      .finally(() => setStatsFetching(false));
   }, []);
 
-  // The params for the current window: preset days, or the applied
-  // custom range. Custom only fetches after Apply — no garbage while
-  // the dates are still being picked.
-  useEffect(() => {
-    if (range === "custom") {
-      if (appliedRange) fetchStats({ start: appliedRange.start, end: appliedRange.end });
-      return;
-    }
-    fetchStats({ days });
-  }, [range, days, appliedRange, fetchStats]);
+  const fetchSellers = useCallback(() => {
+    setSellersLoading(true);
+    setSellersError(null);
+    api.admin
+      .sellers()
+      .then((data) => {
+        setSellers(data);
+        setSellersLoading(false);
+      })
+      .catch((err) => {
+        setSellersError(getErrorMessage(err, "Could not load sellers."));
+        setSellersLoading(false);
+      });
+  }, []);
 
-  function handleApplyCustom() {
-    setRangeError(null);
-    if (!customStart || !customEnd) {
-      setRangeError("Pick both dates.");
-      return;
+  const fetchEvents = useCallback(() => {
+    setEventsLoading(true);
+    setEventsError(null);
+    api.admin
+      .subscriptionEvents()
+      .then((data) => {
+        setEvents(data);
+        setEventsLoading(false);
+      })
+      .catch((err) => {
+        setEventsError(getErrorMessage(err, "Could not load activity."));
+        setEventsLoading(false);
+      });
+  }, []);
+
+  useEffect(() => {
+    fetchStats(window_);
+  }, [window_, fetchStats]);
+  useEffect(() => {
+    fetchSellers();
+  }, [fetchSellers]);
+  useEffect(() => {
+    fetchEvents();
+  }, [fetchEvents]);
+
+  function handleFilterApply(next) {
+    if (next.range === "custom" && next.custom) {
+      setCustom(next.custom);
+      setRange("custom");
+    } else if (next.range === "custom") {
+      // just opening the panel — no fetch until Apply
+      setRange("custom");
+    } else {
+      setCustom(null);
+      setRange(next.range);
     }
-    if (customStart > customEnd) {
-      setRangeError("The start date must be before the end date.");
-      return;
-    }
-    if ((new Date(customEnd) - new Date(customStart)) / DAY_MS + 1 > 366) {
-      setRangeError("Custom ranges can span at most one year.");
-      return;
-    }
-    setAppliedRange({ start: customStart, end: customEnd });
   }
 
-  if (loading) {
+  // ---- Hard error (nothing loaded, first fetch failed) ----
+  if (statsLoading && !stats) {
     return (
       <div className="admin-page">
-        <div className="stat-grid" aria-hidden="true">
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
+        <header className="page-header">
+          <h1>Platform Overview</h1>
+          <p>Monitor your marketplace performance, seller growth, and platform revenue.</p>
+        </header>
+        <div className="kpi-grid" aria-hidden="true">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <SkeletonCard key={i} lines={2} />
+          ))}
         </div>
       </div>
     );
   }
 
-  if (error && !stats) {
+  if (statsError && !stats) {
     return (
       <div className="admin-page">
-        <ErrorState message={error} onRetry={() => fetchStats(range === "custom" && appliedRange ? { start: appliedRange.start, end: appliedRange.end } : { days })} />
+        <header className="page-header">
+          <h1>Platform Overview</h1>
+          <p>Monitor your marketplace performance, seller growth, and platform revenue.</p>
+        </header>
+        <div className="section-error section-error--page">
+          <p>{statsError}</p>
+          <button
+            type="button"
+            className="button button--outline"
+            onClick={() => fetchStats(window_)}
+          >
+            <Icon name="refresh" size={16} />
+            Try again
+          </button>
+        </div>
       </div>
     );
   }
+
+  // ---- Derived figures (all real, all from the API payload) ----
+  const ordersInWindow = stats.orders_daily.reduce((sum, d) => sum + d.count, 0);
+  const daysInWindow = Math.max(stats.orders_daily.length, 1);
+  const avgPerDay = ordersInWindow / daysInWindow;
+  const peak = stats.orders_daily.reduce(
+    (best, d) => (d.count > best.count ? d : best),
+    { key: null, count: 0 }
+  );
+  const peakDay = peak.key && peak.count > 0 ? peak : null;
 
   const conversion =
-    stats.total_sellers > 0
-      ? Math.round((stats.pro_sellers / stats.total_sellers) * 100)
-      : 0;
+    stats.total_sellers > 0 ? Math.round((stats.pro_sellers / stats.total_sellers) * 100) : 0;
+
+  const monthly = stats.revenue_monthly.map((m) => ({ key: m.month, count: m.count, value: m.value }));
+  const incomeData =
+    incomeMeasure === "revenue"
+      ? monthly.map((m) => ({ key: m.key, value: m.value }))
+      : incomeMeasure === "orders"
+        ? monthly.map((m) => ({ key: m.key, value: m.count }))
+        : monthly
+            .filter((m) => m.count > 0)
+            .map((m) => ({ key: m.key, value: Math.round((m.value / m.count) * 100) / 100 }));
   const monthName = new Date().toLocaleDateString(undefined, { month: "long" });
 
+  const filterLabel = rangeLabel(range, custom);
   const windowLabel =
-    range === "custom"
-      ? appliedRange
-        ? `${formatDate(appliedRange.start)} – ${formatDate(appliedRange.end)}`
-        : "custom range"
-      : `last ${days} days`;
+    range === "custom" && !custom ? "last 30 days" : filterLabel.toLowerCase();
 
   return (
-    <div className={`admin-page${fetching ? " admin-page--refetching" : ""}`}>
-      <header className="page-header">
-        <h1>Platform Overview</h1>
-        <p>Your OrderKoi business, at a glance.</p>
+    <div className={`admin-page${statsFetching ? " admin-page--refetching" : ""}`}>
+      <header className="page-header page-header--row">
+        <div>
+          <h1>Platform Overview</h1>
+          <p>Monitor your marketplace performance, seller growth, and platform revenue.</p>
+        </div>
+        {stats.pending_upgrade_requests > 0 && (
+          <div className="header-actions">
+            <Link to="/admin/requests" className="button button--primary button--small">
+              <Icon name="inbox" size={15} />
+              {stats.pending_upgrade_requests} request
+              {stats.pending_upgrade_requests === 1 ? "" : "s"} to review
+            </Link>
+          </div>
+        )}
       </header>
 
-      {error && (
+      {statsError && (
         <div className="alert alert--error" role="alert">
-          {error}
+          {statsError}
         </div>
       )}
 
-      {stats.pending_upgrade_requests > 0 && (
-        <section className="plan-banner plan-banner--action">
-          <div>
-            <strong>
-              {stats.pending_upgrade_requests} upgrade request
-              {stats.pending_upgrade_requests === 1 ? "" : "s"} waiting
-            </strong>
-            <span className="plan-banner-sub">
-              {" "}Sellers paid and want Pro — verify the payments and activate.
-            </span>
-          </div>
-          <Link to="/admin/requests" className="button button--primary button--small">
-            Review requests
-          </Link>
-        </section>
-      )}
+      {/* Global filter bar — scopes every analytics section below */}
+      <DashboardFilters
+        range={range}
+        custom={custom}
+        onApply={handleFilterApply}
+        defaultRange={DEFAULT_RANGE}
+      />
 
-      {/* Earnings — the two kinds of money, clearly separated:
-          what YOU earned (Pro subscriptions) vs what your SELLERS
-          earned collectively through their shops (order value). */}
-      <section className="earnings-grid">
-        <article
-          className="earnings-card earnings-card--admin"
-          role="link"
-          tabIndex={0}
+      {/* KPI grid — six headline metrics, all real API values */}
+      <section className="kpi-grid">
+        <KpiCard
+          icon="creditCard"
+          label="Your earnings"
+          value={formatTk(stats.subscription_revenue_total)}
+          hint={`${formatTk(stats.subscription_revenue_30d)} in the last 30 days`}
+          accent="orange"
+          to="/admin/requests"
           title="See the subscription ledger"
-          onClick={() => navigate("/admin/requests")}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") navigate("/admin/requests");
-          }}
-        >
-          <header className="earnings-head">
-            <span className="earnings-icon earnings-icon--admin">
-              <Icon name="creditCard" size={22} />
-            </span>
-            <div>
-              <h2 className="earnings-title">Your earnings</h2>
-              <p className="earnings-sub">Pro subscriptions across the platform</p>
-            </div>
-          </header>
-          <div className="earnings-body">
-            <span className="earnings-value">{formatTk(stats.subscription_revenue_total)}</span>
-            <span className="earnings-trend">
-              <Icon name="sparkles" size={13} />
-              {formatTk(stats.subscription_revenue_30d)} in the last 30 days
-            </span>
-          </div>
-          <BarChart
-            data={stats.subscription_monthly.map((m) => ({ key: m.month, value: m.value }))}
-            measure="money"
-            height={120}
-          />
-          <p className="earnings-foot">
-            From {stats.pro_sellers} active Pro seller{stats.pro_sellers === 1 ? "" : "s"} ·
-            free (comp) grants excluded
-          </p>
-        </article>
-
-        <article className="earnings-card earnings-card--sellers">
-          <header className="earnings-head">
-            <span className="earnings-icon earnings-icon--sellers">
-              <Icon name="banknote" size={22} />
-            </span>
-            <div>
-              <h2 className="earnings-title">Sellers' income</h2>
-              <p className="earnings-sub">Total order value across all stores</p>
-            </div>
-          </header>
-          <div className="earnings-body">
-            <span className="earnings-value">{formatTk(stats.platform_revenue)}</span>
-            <span className="earnings-trend">
-              <Icon name="package" size={13} />
-              {formatTk(stats.gmv_this_month)} this month ·{" "}
-              {stats.orders_this_month} order{stats.orders_this_month === 1 ? "" : "s"}
-            </span>
-          </div>
-          <BarChart
-            data={stats.revenue_monthly.map((m) => ({ key: m.month, value: m.value }))}
-            measure="money"
-            barColor="var(--success)"
-            height={120}
-          />
-          <p className="earnings-foot">
-            This is your sellers' money — you don't take a cut. Your income is the Pro
-            subscriptions on the left.
-          </p>
-        </article>
-      </section>
-
-      {/* Filter row — one place to scope every activity chart below.
-          Monthly series (12-month windows) are all-time views, so they
-          sit outside the day-window scope. */}
-      <div className="measure-tabs admin-range-tabs" role="tablist" aria-label="Activity window">
-        {RANGE_TABS.map((tab) => {
-          const active =
-            tab.kind === "custom" ? range === "custom" : range === "days" && days === tab.days;
-          return (
-            <button
-              key={tab.label}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              className={`measure-tab${active ? " measure-tab--active" : ""}`}
-              onClick={() => {
-                if (tab.kind === "custom") {
-                  setRange("custom");
-                } else {
-                  setRange("days");
-                  setDays(tab.days);
-                }
-              }}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {range === "custom" && (
-        <CustomRangePanel
-          start={customStart}
-          end={customEnd}
-          onStart={setCustomStart}
-          onEnd={setCustomEnd}
-          onApply={handleApplyCustom}
-          error={rangeError}
         />
-      )}
-
-      {/* Platform pulse */}
-      <section className="stat-grid">
-        <StatTile
+        <KpiCard
+          icon="banknote"
+          label="Seller revenue"
+          value={formatTk(stats.platform_revenue)}
+          hint={`${formatTk(stats.gmv_this_month)} this month · ${stats.orders_this_month} order${stats.orders_this_month === 1 ? "" : "s"}`}
+          accent="green"
+          to="/admin/sellers"
+          title="See sellers and their order value"
+        />
+        <KpiCard
+          icon="package"
+          label={`Orders · ${windowLabel}`}
+          value={ordersInWindow.toLocaleString()}
+          hint={
+            avgPerDay >= 1
+              ? `${avgPerDay.toFixed(1)} per day on average`
+              : `${(avgPerDay * daysInWindow).toFixed(0)} total across ${daysInWindow} days`
+          }
+          accent="blue"
+          spark={stats.orders_daily.map((d) => d.count)}
+          sparkColor="var(--info)"
+        />
+        <KpiCard
           icon="store"
           label="Total sellers"
           value={stats.total_sellers}
           hint={
             stats.new_sellers_30d > 0
-              ? `+${stats.new_sellers_30d} in the last 30 days`
-              : null
+              ? `+${stats.new_sellers_30d} joined in the last 30 days`
+              : `${stats.sellers_with_orders} sellers with orders`
           }
           accent="blue"
           to="/admin/sellers"
           title="See all sellers and their plans"
         />
-        <StatTile
+        <KpiCard
           icon="sparkles"
           label="Pro sellers"
           value={stats.pro_sellers}
-          hint={`${conversion}% of sellers`}
-          accent="amber"
+          hint={`${conversion}% of all sellers`}
+          accent="orange"
           to="/admin/sellers?plan=pro"
           title="See who's on Pro"
         />
-        <StatTile
-          icon="package"
-          label={`Orders · ${windowLabel}`}
-          value={stats.orders_daily.reduce((sum, d) => sum + d.count, 0)}
-          hint={`${stats.sellers_with_orders} of ${stats.total_sellers} sellers have orders`}
-          accent="blue"
-          spark={stats.orders_daily?.map((d) => d.count)}
-        />
-        <StatTile
-          icon="chartBar"
+        <KpiCard
+          icon="users"
           label="New sellers · 30 days"
           value={stats.new_sellers_30d}
           hint={`${monthName} so far: ${stats.orders_this_month} orders`}
@@ -387,83 +417,153 @@ export default function AdminOverview() {
         />
       </section>
 
-      {/* Charts — activity (scoped by the window tabs above) */}
-      <section className="card">
-        <div className="card-header-row">
-          <h3>Orders — {windowLabel}</h3>
-        </div>
-        <BarChart data={stats.orders_daily.map((d) => ({ key: d.date, value: d.count }))} />
-      </section>
-
-      <div className="admin-chart-grid">
-        <section className="card">
-          <div className="card-header-row">
-            <h3>Sellers' income — last 12 months</h3>
-          </div>
+      {/* Revenue analytics — the two kinds of money, side by side */}
+      <div className="admin-chart-grid admin-chart-grid--revenue">
+        <ChartCard
+          title="Platform revenue"
+          meta={`${formatTk(stats.subscription_revenue_total)} · last 12 months`}
+          footer={`From ${stats.pro_sellers} active Pro seller${stats.pro_sellers === 1 ? "" : "s"} · free (comp) grants excluded`}
+        >
           <BarChart
-            data={stats.revenue_monthly.map((m) => ({ key: m.month, value: m.value }))}
+            data={stats.subscription_monthly.map((m) => ({ key: m.month, value: m.value }))}
             measure="money"
-            barColor="var(--success)"
+            height={160}
           />
-        </section>
-        <section className="card">
-          <div className="card-header-row">
-            <h3>New sellers — last 12 months</h3>
+        </ChartCard>
+
+        <ChartCard
+          title="Seller income"
+          meta={`${formatTk(stats.platform_revenue)} · last 12 months`}
+          tabs={[
+            { value: "revenue", label: "Revenue" },
+            { value: "orders", label: "Orders" },
+            { value: "aov", label: "AOV" },
+          ]}
+          activeTab={incomeMeasure}
+          onTab={setIncomeMeasure}
+          footer="Your sellers' money — you don't take a cut. Your income is the Pro subscriptions."
+        >
+          <BarChart
+            data={incomeData}
+            measure={incomeMeasure === "orders" ? "count" : "money"}
+            barColor="var(--success)"
+            height={160}
+          />
+        </ChartCard>
+      </div>
+
+      {/* Orders analytics — scoped by the global date filter */}
+      <ChartCard
+        title={`Orders — ${windowLabel}`}
+        meta={
+          peakDay
+            ? `Peak: ${peakDay.count} on ${formatDate(peakDay.key)}`
+            : `${ordersInWindow} order${ordersInWindow === 1 ? "" : "s"} in this period`
+        }
+      >
+        {ordersInWindow === 0 ? (
+          <div className="chart-empty">
+            <p>No orders in this period.</p>
+            <button
+              type="button"
+              className="button button--outline button--small"
+              onClick={() => handleFilterApply({ range: DEFAULT_RANGE })}
+            >
+              Change date range
+            </button>
           </div>
+        ) : (
+          <BarChart
+            data={stats.orders_daily.map((d) => ({ key: d.date, value: d.count }))}
+            barColor="var(--info)"
+          />
+        )}
+      </ChartCard>
+
+      {/* Growth + plan mix */}
+      <div className="admin-chart-grid">
+        <ChartCard
+          title="Seller growth"
+          meta={`${stats.new_sellers_30d} new in the last 30 days`}
+        >
           <BarChart
             data={stats.sellers_monthly.map((m) => ({ key: m.month, value: m.count }))}
+            height={180}
           />
+        </ChartCard>
+
+        <section className="card admin-plan-mix-card">
+          <div className="card-header-row">
+            <h3>Plan distribution</h3>
+          </div>
+          <DonutChart
+            caption={`${stats.total_sellers} shops`}
+            slices={[
+              { label: "Pro", value: stats.pro_sellers, color: "var(--primary)" },
+              { label: "Free", value: stats.free_sellers, color: "var(--info)" },
+            ]}
+          />
+          <p className="chart-card-foot">
+            {stats.pro_sellers} Pro · {stats.free_sellers} Free · {conversion}% conversion
+          </p>
         </section>
       </div>
 
-      {/* Plan mix — donut */}
-      <section className="card admin-plan-mix-card">
-        <div className="card-header-row">
-          <h3>Plan mix</h3>
-          <span className="admin-mix-total">
-            {stats.pro_sellers} Pro · {stats.free_sellers} Free
-          </span>
-        </div>
-        <DonutChart
-          caption={`${stats.total_sellers} shops`}
-          slices={[
-            { label: "Pro", value: stats.pro_sellers, color: "var(--primary)" },
-            { label: "Free", value: stats.free_sellers, color: "var(--info)" },
-          ]}
+      {/* Needs attention + newest sellers + activity */}
+      <div className="admin-chart-grid admin-chart-grid--lists">
+        <NewestSellers
+          sellers={sellers ?? []}
+          loading={sellersLoading}
+          error={sellersError}
+          onRetry={fetchSellers}
         />
-      </section>
 
-      <section className="card">
-        <div className="card-header-row">
-          <h3>Newest sellers</h3>
-          <Link to="/admin/sellers" className="card-header-link">
-            All sellers
-            <Icon name="arrowRight" size={13} />
-          </Link>
+        <div className="stack-col">
+          <section className="card">
+            <div className="card-header-row">
+              <h3>Upgrade requests</h3>
+              <Link to="/admin/requests" className="card-header-link">
+                Review
+                <Icon name="arrowRight" size={13} />
+              </Link>
+            </div>
+            <div className="requests-mini">
+              <span className="requests-mini-value">
+                {stats.pending_upgrade_requests}
+              </span>
+              <span className="requests-mini-label">
+                pending request{stats.pending_upgrade_requests === 1 ? "" : "s"}
+                {stats.pending_upgrade_requests > 0
+                  ? " — sellers paid and want Pro"
+                  : " — you're all caught up"}
+              </span>
+            </div>
+          </section>
+
+          <section className="card">
+            <div className="card-header-row">
+              <h3>Recent activity</h3>
+            </div>
+            {eventsLoading ? (
+              <SkeletonRows rows={3} />
+            ) : eventsError ? (
+              <div className="section-error">
+                <p>{eventsError}</p>
+                <button
+                  type="button"
+                  className="button button--outline button--small"
+                  onClick={fetchEvents}
+                >
+                  <Icon name="refresh" size={14} />
+                  Try again
+                </button>
+              </div>
+            ) : (
+              <ActivityFeed events={(events ?? []).slice(0, 6)} />
+            )}
+          </section>
         </div>
-        {stats.recent_signups.length === 0 ? (
-          <p className="muted-note">No sellers yet — share your signup link!</p>
-        ) : (
-          <ul className="recent-signup-list">
-            {stats.recent_signups.map((signup) => (
-              <li key={`${signup.store_name}-${signup.created_at}`} className="recent-signup">
-                <span className={`plan-chip${signup.plan === "pro" ? " plan-chip--pro" : ""}`}>
-                  {signup.plan === "pro" ? (
-                    <>
-                      <Icon name="sparkles" size={14} className="plan-chip-icon" />
-                      Pro
-                    </>
-                  ) : (
-                    "Free"
-                  )}
-                </span>
-                <span className="recent-signup-name">{signup.store_name}</span>
-                <span className="recent-signup-date">joined {formatDate(signup.created_at)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      </div>
     </div>
   );
 }

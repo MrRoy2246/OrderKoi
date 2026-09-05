@@ -10,10 +10,19 @@ const STORE_NAV_ITEMS = [
   { to: "/dashboard/settings", label: "Settings", icon: "settings", end: false },
 ];
 
-const ADMIN_NAV_ITEMS = [
-  { to: "/admin", label: "Platform Overview", icon: "chartBar", end: true },
-  { to: "/admin/requests", label: "Upgrade Requests", icon: "creditCard", end: false },
-  { to: "/admin/sellers", label: "Sellers & Plans", icon: "users", end: false },
+/** Admin nav — grouped by section, only routes that exist. */
+const ADMIN_NAV_GROUPS = [
+  {
+    heading: "Overview",
+    items: [{ to: "/admin", label: "Platform Overview", icon: "chartBar", end: true }],
+  },
+  {
+    heading: "Sellers",
+    items: [
+      { to: "/admin/sellers", label: "Sellers & Plans", icon: "users", end: false },
+      { to: "/admin/requests", label: "Upgrade Requests", icon: "creditCard", end: false },
+    ],
+  },
 ];
 
 function NavLinks({ items, onNavigate }) {
@@ -43,7 +52,12 @@ function SidebarBody({ isAdmin, seller, onLogout, onNavigate }) {
 
       <nav className="sidebar-nav" aria-label={isAdmin ? "Platform navigation" : "Store navigation"}>
         {isAdmin ? (
-          <NavLinks items={ADMIN_NAV_ITEMS} onNavigate={onNavigate} />
+          ADMIN_NAV_GROUPS.map((group) => (
+            <div key={group.heading} className="sidebar-group">
+              <span className="sidebar-group-heading">{group.heading}</span>
+              <NavLinks items={group.items} onNavigate={onNavigate} />
+            </div>
+          ))
         ) : (
           <NavLinks items={STORE_NAV_ITEMS} onNavigate={onNavigate} />
         )}

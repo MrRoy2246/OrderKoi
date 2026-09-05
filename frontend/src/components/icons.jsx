@@ -101,6 +101,35 @@ const GLYPHS = {
   chevronRight: <path d="m9 5 7 7-7 7" />,
   chevronLeft: <path d="m15 5-7 7 7 7" />,
   chevronDown: <path d="m5 9 7 7 7-7" />,
+  calendar: (
+    <>
+      <rect x="3.5" y="5" width="17" height="16" rx="2" />
+      <path d="M8 3v4M16 3v4M3.5 10h17" />
+    </>
+  ),
+  trendUp: (
+    <>
+      <path d="m3 17 6-6 4 4 8-8" />
+      <path d="M15 7h6v6" />
+    </>
+  ),
+  trendDown: (
+    <>
+      <path d="m3 7 6 6 4-4 8 8" />
+      <path d="M15 17h6v-6" />
+    </>
+  ),
+  arrowUp: (
+    <>
+      <path d="M12 19V5" />
+      <path d="m5 12 7-7 7 7" />
+    </>
+  ),
+  activity: (
+    <>
+      <path d="M3 12h4l3 8 4-16 3 8h4" />
+    </>
+  ),
   arrowRight: (
     <>
       <path d="M4 12h16" />
