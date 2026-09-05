@@ -4968,3 +4968,133 @@ textarea {
   padding: 0 12px;
   margin-bottom: 4px;
 }
+
+/* ---- Shop detail page (admin drill-down) ---- */
+
+/* Store names in the sellers tables open the shop's detail page */
+.shop-link {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.shop-link:hover {
+  color: var(--primary);
+  border-bottom-color: var(--primary-tint-strong);
+}
+
+/* "← All sellers" back link above the shop title */
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.back-link:hover {
+  color: var(--primary);
+}
+
+.page-header-eyebrow {
+  margin: 0 0 6px;
+}
+
+.shop-detail-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.shop-detail-sub {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.shop-detail-sub a {
+  color: var(--info);
+  text-decoration: none;
+}
+
+.shop-detail-sub a:hover {
+  text-decoration: underline;
+}
+
+/* Status breakdown — one bar row per workflow status */
+.status-breakdown {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.status-row {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-row-bar {
+  display: block;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+
+.status-row-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  min-width: 0;
+  transition: width 250ms ease-out;
+}
+
+.status-row-fill--placed {
+  background: var(--warning);
+}
+
+.status-row-fill--confirmed {
+  background: var(--info);
+}
+
+.status-row-fill--shipped {
+  background: var(--info);
+}
+
+.status-row-fill--delivered {
+  background: var(--success);
+}
+
+.status-row-fill--cancelled {
+  background: var(--error);
+}
+
+.status-row-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .status-row {
+    grid-template-columns: 96px 1fr auto;
+    gap: 8px;
+  }
+
+  .status-row-value {
+    font-size: 12px;
+  }
+
+  .shop-detail-title {
+    font-size: 22px;
+  }
+}

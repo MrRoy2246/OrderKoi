@@ -559,3 +559,153 @@ def test_pro_plan_bypasses_limit(client, auth_headers, monkeypatch):
             headers=auth_headers,
         )
         assert response.status_code == 201
+
+
+# ---------- Per-shop stats (admin drill-down) ----------
+
+def test_seller_shop_stats_default_window(client, admin_headers, seller, order):
+    """The default window is the trailing 30 days: one bucket per day,
+    the fresh order in today's bucket, and the shop's fields present."""
+    stats = client.get(
+        f"/admin/sellers/{seller['id']}/stats", headers=admin_headers
+    ).json()
+    assert stats["store_name"] == seller["store_name"]
+    assert stats["email"] == seller["email"]
+    assert len(stats["daily"]) == 30
+    assert stats["daily"][-1]["count"] >= 1  # the conftest order, placed today
+    assert stats["daily"][-1]["value"] >= 1400
+    assert stats["total_orders"] >= 1
+    assert stats["revenue"] >= 1400
+    assert stats["aov"] == round(stats["revenue"] / stats["total_orders"], 2)
+    assert stats["status_counts"]["placed"] >= 1
+
+
+def test_seller_shop_stats_custom_range_excludes_other_seller(
+    client, admin_headers, auth_headers, seller, order
+):
+    """The shop's stats only count its own orders; a second seller's
+    order placed inside the window must not leak in. (Shared DB: other
+    tests' orders may exist for OTHER sellers, but none for this one
+    — it was created in this test.)"""
+    import uuid as uuid_mod
+
+    # A second shop with one order today
+    other_payload = {
+        "email": f"shopstats-{uuid_mod.uuid4().hex[:10]}@example.com",
+        "password": "secretpass123",
+        "store_name": "Other Shop",
+        "phone": "01712345679",
+    }
+    signup = client.post("/auth/signup", json=other_payload)
+    assert signup.status_code == 201
+    other_login = client.post(
+        "/auth/login",
+        json={"email": other_payload["email"], "password": "password" if False else "secretpass123"},
+    )
+    assert other_login.status_code == 200
+    other_headers = {"Authorization": f"Bearer {other_login.json()['access_token']}"}
+    other_order = client.post(
+        "/orders",
+        json={
+            "customer_name": "Other Buyer",
+            "customer_phone": "01899999999",
+            "items": [{"name": "Y", "quantity": 1, "price": 200}],
+        },
+        headers=other_headers,
+    )
+    assert other_order.status_code == 201
+
+    # First seller's stats see only the conftest order (1,400 Tk), not
+    # the other shop's 200 Tk one
+    stats = client.get(
+        f"/admin/sellers/{seller['id']}/stats", headers=admin_headers
+    ).json()
+    assert stats["total_orders"] == 1
+    assert stats["revenue"] == 1400
+
+
+def test_seller_shop_stats_validations(client, admin_headers, seller):
+    """Missing half, reversed, over a year — same 422 rules as the
+    platform stats."""
+    base = f"/admin/sellers/{seller['id']}/stats"
+    assert client.get(f"{base}?start=2026-01-01", headers=admin_headers).status_code == 422
+    assert (
+        client.get(f"{base}?start=2026-02-01&end=2026-01-01", headers=admin_headers).status_code
+        == 422
+    )
+    assert (
+        client.get(
+            f"{base}?start=2024-01-01&end=2026-01-01", headers=admin_headers
+        ).status_code
+        == 422
+    )
+
+
+def test_seller_shop_stats_unknown_seller_404(client, admin_headers):
+    assert (
+        client.get("/admin/sellers/999999/stats", headers=admin_headers).status_code == 404
+    )
+
+
+def test_seller_shop_stats_forbidden_for_seller(client, auth_headers, seller):
+    """A normal seller can't inspect another shop — admin only."""
+    response = client.get(f"/admin/sellers/{seller['id']}/stats", headers=auth_headers)
+    assert response.status_code == 403
+
+
+def test_seller_orders_csv_export(client, admin_headers, seller, order):
+    """The CSV export honors the shop scoping and the window, and the
+    BOM header row is present for Excel."""
+    from datetime import date as date_cls
+
+    from app.timezone import business_today
+
+    end = business_today()
+    start = date_cls.fromordinal(end.toordinal() - 6)
+    response = client.get(
+        f"/admin/sellers/{seller['id']}/orders.csv"
+        f"?start={start.isoformat()}&end={end.isoformat()}",
+        headers=admin_headers,
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    body = response.text
+    assert body.startswith("﻿")
+    assert "Order #" in body
+    assert "Rahim Uddin" in body  # the conftest order's customer
+    assert seller["store_slug"] in response.headers["content-disposition"]
+
+
+def test_seller_orders_csv_excludes_other_shops(client, admin_headers, seller, auth_headers, order):
+    """A second shop's order must not appear in this shop's CSV."""
+    import uuid as uuid_mod
+
+    other_payload = {
+        "email": f"shopcsv-{uuid_mod.uuid4().hex[:10]}@example.com",
+        "password": "secretpass123",
+        "store_name": "CSV Other Shop",
+        "phone": "01712345676",
+    }
+    client.post("/auth/signup", json=other_payload)
+    other_login = client.post(
+        "/auth/login",
+        json={"email": other_payload["email"], "password": other_payload["password"]},
+    )
+    other_headers = {"Authorization": f"Bearer {other_login.json()['access_token']}"}
+    other = client.post(
+        "/orders",
+        json={
+            "customer_name": "CSV Excluded Buyer",
+            "customer_phone": "01888888888",
+            "items": [{"name": "Z", "quantity": 1, "price": 100}],
+        },
+        headers=other_headers,
+    )
+    assert other.status_code == 201
+
+    response = client.get(
+        f"/admin/sellers/{seller['id']}/orders.csv", headers=admin_headers
+    )
+    assert response.status_code == 200
+    assert "Rahim Uddin" in response.text
+    assert "CSV Excluded Buyer" not in response.text

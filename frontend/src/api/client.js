@@ -245,5 +245,15 @@ export const api = {
       }),
     // Subscription ledger — every subscribe/renew/cancel, newest first
     subscriptionEvents: () => request("/admin/subscription-events"),
+    // One shop's performance over a date window (daily orders/revenue
+    // series, totals, AOV, status counts) — powers the shop-detail page
+    sellerStats: (sellerId, params = {}) =>
+      request(`/admin/sellers/${sellerId}/stats${toQueryString(params)}`),
+    // The same window's orders as a downloadable CSV report
+    exportSellerOrdersCsv: (sellerId, params = {}) =>
+      downloadFile(
+        `/admin/sellers/${sellerId}/orders.csv${toQueryString(params)}`,
+        "orders.csv",
+      ),
   },
 };

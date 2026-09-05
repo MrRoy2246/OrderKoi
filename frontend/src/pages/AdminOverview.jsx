@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, getErrorMessage } from "../api/client";
-import { ActivityFeed, KpiCard } from "../components/AdminDashboard";
+import { ActivityFeed, ChartCard, KpiCard } from "../components/AdminDashboard";
 import { BarChart, DonutChart } from "../components/Charts";
 import { DashboardFilters, rangeLabel, rangeToWindow } from "../components/DashboardFilters";
 import Icon from "../components/icons";
@@ -26,46 +26,6 @@ function formatDate(iso) {
 
 /** One analytics section: title, optional meta row, chart. Sections
  * render independently — one failed API never blanks its neighbors. */
-function ChartCard({ title, meta, tabs, activeTab, onTab, children, error, onRetry, footer }) {
-  return (
-    <section className="card chart-card">
-      <div className="card-header-row">
-        <h3>{title}</h3>
-        {meta && <span className="chart-card-meta">{meta}</span>}
-        {tabs && (
-          <div className="measure-tabs" role="tablist" aria-label={`${title} measure`}>
-            {tabs.map((tab) => (
-              <button
-                key={tab.value}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === tab.value}
-                className={`measure-tab${activeTab === tab.value ? " measure-tab--active" : ""}`}
-                onClick={() => onTab(tab.value)}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-      {error ? (
-        <div className="section-error">
-          <p>{error}</p>
-          {onRetry && (
-            <button type="button" className="button button--outline button--small" onClick={onRetry}>
-              <Icon name="refresh" size={14} />
-              Try again
-            </button>
-          )}
-        </div>
-      ) : (
-        children
-      )}
-      {footer && !error && <p className="chart-card-foot">{footer}</p>}
-    </section>
-  );
-}
 
 /** Newest-sellers table — columns mapped to what /admin/sellers
  * actually returns (store, plan, orders, revenue, joined). */
@@ -127,7 +87,15 @@ function NewestSellers({ sellers, loading, error, onRetry }) {
             <tbody>
               {shops.map((shop) => (
                 <tr key={shop.id}>
-                  <td className="td-strong" data-label="Seller">{shop.store_name}</td>
+                  <td className="td-strong" data-label="Seller">
+                    <Link
+                      to={`/admin/sellers/${shop.id}`}
+                      className="shop-link"
+                      title={`Open ${shop.store_name}'s performance, revenue, and report`}
+                    >
+                      {shop.store_name}
+                    </Link>
+                  </td>
                   <td data-label="Plan">
                     <span className={`plan-chip${shop.plan === "pro" ? " plan-chip--pro" : ""}`}>
                       {shop.plan === "pro" ? (
@@ -182,8 +150,15 @@ export default function AdminOverview() {
 
   // The window a fetch stands for — a custom range only counts once
   // applied; while dates are being picked the last window stays on
-  // screen (no garbage fetches).
-  const window_ = range === "custom" && !custom ? rangeToWindow(DEFAULT_RANGE) : rangeToWindow(range, custom);
+  // screen (no garbage fetches). PRIMITIVES in the effect deps: an
+  // object literal here re-created every render caused an infinite
+  // fetch loop (dim + pointer-events:none blinking forever).
+  const window_ =
+    range === "custom" && !custom
+      ? rangeToWindow(DEFAULT_RANGE)
+      : rangeToWindow(range, custom);
+  const windowStart = window_?.start;
+  const windowEnd = window_?.end;
 
   const fetchStats = useCallback((win) => {
     setStatsFetching(true);
@@ -232,8 +207,11 @@ export default function AdminOverview() {
   }, []);
 
   useEffect(() => {
-    fetchStats(window_);
-  }, [window_, fetchStats]);
+    // Custom range not yet applied → keep the previous data on screen
+    if (range === "custom" && !custom) return;
+    fetchStats(windowStart && windowEnd ? { start: windowStart, end: windowEnd } : {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- primitives only
+  }, [windowStart, windowEnd, fetchStats]);
   useEffect(() => {
     fetchSellers();
   }, [fetchSellers]);
@@ -283,7 +261,9 @@ export default function AdminOverview() {
           <button
             type="button"
             className="button button--outline"
-            onClick={() => fetchStats(window_)}
+            onClick={() =>
+              fetchStats(windowStart && windowEnd ? { start: windowStart, end: windowEnd } : {})
+            }
           >
             <Icon name="refresh" size={16} />
             Try again
@@ -320,6 +300,9 @@ export default function AdminOverview() {
   const filterLabel = rangeLabel(range, custom);
   const windowLabel =
     range === "custom" && !custom ? "last 30 days" : filterLabel.toLowerCase();
+  // Monthly money charts: an explicit range scopes them; rolling
+  // presets (the default) keep the trailing 12 months
+  const revenueChartScope = custom ? rangeLabel(range, custom) : "last 12 months";
 
   return (
     <div className={`admin-page${statsFetching ? " admin-page--refetching" : ""}`}>
@@ -417,11 +400,14 @@ export default function AdminOverview() {
         />
       </section>
 
-      {/* Revenue analytics — the two kinds of money, side by side */}
+      {/* Revenue analytics — the two kinds of money, side by side.
+          The monthly series follows the global date filter when an
+          explicit range is set; on rolling presets it stays the
+          trailing 12 months (the money views' default). */}
       <div className="admin-chart-grid admin-chart-grid--revenue">
         <ChartCard
           title="Platform revenue"
-          meta={`${formatTk(stats.subscription_revenue_total)} · last 12 months`}
+          meta={`${formatTk(stats.subscription_revenue_total)} · ${revenueChartScope}`}
           footer={`From ${stats.pro_sellers} active Pro seller${stats.pro_sellers === 1 ? "" : "s"} · free (comp) grants excluded`}
         >
           <BarChart
@@ -433,7 +419,7 @@ export default function AdminOverview() {
 
         <ChartCard
           title="Seller income"
-          meta={`${formatTk(stats.platform_revenue)} · last 12 months`}
+          meta={`${formatTk(stats.platform_revenue)} · ${revenueChartScope}`}
           tabs={[
             { value: "revenue", label: "Revenue" },
             { value: "orders", label: "Orders" },

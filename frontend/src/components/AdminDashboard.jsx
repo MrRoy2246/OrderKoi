@@ -57,6 +57,53 @@ export function KpiCard({ icon, label, value, hint, accent, to, title, spark, sp
 }
 
 /**
+ * One analytics section: title, optional meta row, measure tabs, chart
+ * body, optional footer. Shared by the overview and the shop-detail
+ * page. Renders its own error state with retry — sections fail
+ * independently, one bad API never blanks its neighbors.
+ */
+export function ChartCard({ title, meta, tabs, activeTab, onTab, children, error, onRetry, footer }) {
+  return (
+    <section className="card chart-card">
+      <div className="card-header-row">
+        <h3>{title}</h3>
+        {meta && <span className="chart-card-meta">{meta}</span>}
+        {tabs && (
+          <div className="measure-tabs" role="tablist" aria-label={`${title} measure`}>
+            {tabs.map((tab) => (
+              <button
+                key={tab.value}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab.value}
+                className={`measure-tab${activeTab === tab.value ? " measure-tab--active" : ""}`}
+                onClick={() => onTab(tab.value)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {error ? (
+        <div className="section-error">
+          <p>{error}</p>
+          {onRetry && (
+            <button type="button" className="button button--outline button--small" onClick={onRetry}>
+              <Icon name="refresh" size={14} />
+              Try again
+            </button>
+          )}
+        </div>
+      ) : (
+        children
+      )}
+      {footer && !error && <p className="chart-card-foot">{footer}</p>}
+    </section>
+  );
+}
+
+/**
  * Recent activity — derived from the real subscription ledger
  * (`api.admin.subscriptionEvents()`), not a fabricated feed. Each row:
  * dot, message, store, relative time with the exact date on hover.

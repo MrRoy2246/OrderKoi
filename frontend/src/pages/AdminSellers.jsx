@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, getErrorMessage } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import AdminProModal from "../components/AdminProModal";
@@ -171,7 +171,15 @@ export default function AdminSellers() {
           <tbody>
             {filtered.map((seller) => (
               <tr key={seller.id}>
-                <td className="td-strong">{seller.store_name}</td>
+                <td className="td-strong">
+                  <Link
+                    to={`/admin/sellers/${seller.id}`}
+                    className="shop-link"
+                    title={`Open ${seller.store_name}'s performance, revenue, and report`}
+                  >
+                    {seller.store_name}
+                  </Link>
+                </td>
                 <td className="td-muted">{seller.email}</td>
                 <td>
                   <RoleBadge role={seller.role} />

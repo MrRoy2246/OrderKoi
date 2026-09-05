@@ -14,6 +14,7 @@ import Settings from "./pages/Settings";
 import AdminOverview from "./pages/AdminOverview";
 import AdminSellers from "./pages/AdminSellers";
 import AdminRequests from "./pages/AdminRequests";
+import AdminShopDetail from "./pages/AdminShopDetail";
 import AdminRoute from "./components/AdminRoute";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
@@ -55,6 +56,7 @@ export default function App() {
           >
             <Route index element={<AdminOverview />} />
             <Route path="sellers" element={<AdminSellers />} />
+            <Route path="sellers/:id" element={<AdminShopDetail />} />
             <Route path="requests" element={<AdminRequests />} />
           </Route>
 

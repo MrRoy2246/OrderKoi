@@ -7,10 +7,13 @@ admin verifies the payment and activates the paid-for duration).
 """
 
 import calendar
+import csv
+import io
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func
+from fastapi.responses import StreamingResponse
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -153,6 +156,12 @@ def platform_stats(
     # Naive UTC boundaries, exactly how created_at is stored
     window_start_dt, _ = day_bounds_utc(window_start)
     _, window_end_dt = day_bounds_utc(window_end)
+    # Monthly series (GMV / signups / subscription money): scoped to
+    # the window when the window spans 2+ months (This/Previous year,
+    # custom ranges); short rolling presets keep the trailing
+    # 12-month context — a 7-day window bucketed by month is one
+    # lonely bar, and money views want the longer story.
+    explicit_range = start is not None or end is not None
     sellers = db.query(Seller).all()
     seller_ids = [seller.id for seller in sellers]
 
@@ -236,8 +245,9 @@ def platform_stats(
         db, since=utcnow().replace(tzinfo=None) - timedelta(days=30)
     )
 
-    # Monthly paid-Pro money (same 12-month window as GMV) — the
-    # "your earnings" chart. Comp grants excluded, priced per entry.
+    # Monthly paid-Pro money (spans the selected window, capped at 12
+    # months — the "your earnings" chart). Comp grants excluded, priced
+    # per entry.
     sub_month_expr = func.strftime("%Y-%m", SubscriptionEvent.created_at, *sqlite_shift_modifiers())
     paid_events = (
         db.query(SubscriptionEvent.created_at, SubscriptionEvent.months)
@@ -287,10 +297,32 @@ def platform_stats(
     # Keys come from plain (year, month) arithmetic on the *local* date —
     # UTC-space month arithmetic drifts by the tz offset (Dhaka +6) and
     # produces duplicate or skipped months.
+    #
+    # The monthly series spans the SELECTED window (the dashboard's date
+    # filter), not a fixed trailing 12 months — capped at 12 buckets so
+    # a year-long custom range still renders a readable chart.
     month_expr = func.strftime("%Y-%m", Order.created_at, *sqlite_shift_modifiers())
+    # Scope rule: the window's own months when it spans 2+ calendar
+    # months; trailing 12 months otherwise (both branches set the
+    # window bounds, so they're always available).
     now_local = business_now()
-    month_index = now_local.year * 12 + (now_local.month - 1) - 11  # 11 months back
-    back_year, back_month = divmod(month_index, 12)
+    if explicit_range:
+        start_local = to_business_time(window_start_dt.replace(tzinfo=timezone.utc))
+        s_idx = start_local.year * 12 + (start_local.month - 1)
+        end_local = to_business_time(window_end_dt.replace(tzinfo=timezone.utc))
+        e_idx = end_local.year * 12 + (end_local.month - 1)
+        if e_idx > s_idx:  # 2+ calendar months → scope the series
+            start_month_index, end_month_index = s_idx, e_idx
+        else:  # single-month window → keep the 12-month context
+            start_month_index = now_local.year * 12 + (now_local.month - 1) - 11
+            end_month_index = now_local.year * 12 + (now_local.month - 1)
+    else:
+        start_month_index = now_local.year * 12 + (now_local.month - 1) - 11
+        end_month_index = now_local.year * 12 + (now_local.month - 1)
+    # Cap: at most 12 buckets ending on the series' end month (a
+    # >1-year window still shows the most recent year)
+    first_index = max(start_month_index, end_month_index - 11)
+    back_year, back_month = divmod(first_index, 12)
     first_bucket_start = (
         datetime(back_year, back_month + 1, 1, tzinfo=business_tz)
         .astimezone(timezone.utc)
@@ -325,10 +357,10 @@ def platform_stats(
     )
     signup_map = {str(month): int(count) for month, count in signup_rows}
 
-    # Build the last 12 business months, oldest first
+    # Build the month series covering the window (oldest first)
     months_series = []
-    cursor = month_index
-    for _i in range(12):
+    cursor = first_index
+    while cursor <= end_month_index:
         year, month0 = divmod(cursor, 12)
         key = f"{year:04d}-{month0 + 1:02d}"
         count, value = gmv_map.get(key, (0, 0.0))
@@ -367,6 +399,215 @@ def platform_stats(
         "sellers_monthly": sellers_monthly,
         "subscription_monthly": subscription_monthly,
     }
+
+
+@router.get(
+    "/sellers/{seller_id}/stats",
+    summary="One shop's performance — daily orders and revenue over a window",
+)
+def seller_shop_stats(
+    seller_id: int,
+    start: date | None = Query(default=None, description="Window start (YYYY-MM-DD, inclusive)"),
+    end: date | None = Query(default=None, description="Window end (YYYY-MM-DD, inclusive)"),
+    db: Session = Depends(get_db),
+    admin: Seller = Depends(get_current_admin),  # noqa: ARG001 — guards access
+) -> dict:
+    """Admin view of a single shop's numbers. Same window rules as the
+    platform stats: defaults to the last 30 days, explicit start/end
+    (inclusive, business timezone), at most one year."""
+    seller = db.get(Seller, seller_id)
+    if seller is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Seller not found.")
+
+    today = business_today()
+    if start is None and end is None:
+        window_start, window_end = today - timedelta(days=29), today
+    elif start is None or end is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Custom range needs both start and end dates.",
+        )
+    elif start > end:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Start date must be before (or equal to) the end date.",
+        )
+    elif (end - start).days + 1 > 366:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Custom range can span at most one year.",
+        )
+    else:
+        window_start, window_end = start, end
+
+    window_days = (window_end - window_start).days + 1
+    window_start_dt, _ = day_bounds_utc(window_start)
+    _, window_end_dt = day_bounds_utc(window_end)
+    owned = Order.seller_id == seller.id
+    in_window = (Order.created_at >= window_start_dt) & (Order.created_at < window_end_dt)
+
+    # Status counts + revenue in the window, one grouped query
+    status_rows = (
+        db.query(
+            Order.status,
+            func.count(Order.id),
+            func.coalesce(func.sum(Order.total_price), 0.0),
+        )
+        .filter(owned, in_window)
+        .group_by(Order.status)
+        .all()
+    )
+    status_counts = {s.value: 0 for s in OrderStatus}
+    total_orders = 0
+    revenue = 0.0
+    for row_status, count, row_total in status_rows:
+        status_counts[row_status] = status_counts.get(row_status, 0) + count
+        total_orders += count
+        if row_status != OrderStatus.CANCELLED.value:
+            revenue += float(row_total)
+
+    # Daily buckets with revenue (business-local days, full window —
+    # quiet days show as zero so the chart keeps its shape)
+    day_expr = func.date(Order.created_at, *sqlite_shift_modifiers())
+    daily_rows = (
+        db.query(
+            day_expr,
+            func.count(Order.id),
+            func.coalesce(
+                func.sum(
+                    case((Order.status != OrderStatus.CANCELLED.value, Order.total_price))
+                ),
+                0.0,
+            ),
+        )
+        .filter(owned, in_window)
+        .group_by(day_expr)
+        .all()
+    )
+    daily_map = {
+        str(day): (int(count), round(float(total), 2)) for day, count, total in daily_rows
+    }
+    daily = [
+        {
+            "date": (window_start + timedelta(days=i)).isoformat(),
+            "count": daily_map.get((window_start + timedelta(days=i)).isoformat(), (0, 0.0))[0],
+            "value": daily_map.get((window_start + timedelta(days=i)).isoformat(), (0, 0.0))[1],
+        }
+        for i in range(window_days)
+    ]
+
+    return {
+        "store_name": seller.store_name,
+        "store_slug": seller.store_slug,
+        "email": seller.email,
+        "plan": seller.plan,
+        "plan_expires_at": seller.plan_expires_at,
+        "created_at": seller.created_at,
+        "range": {"start": window_start.isoformat(), "end": window_end.isoformat()},
+        "total_orders": total_orders,
+        "revenue": round(revenue, 2),
+        "aov": round(revenue / total_orders, 2) if total_orders else 0.0,
+        "status_counts": status_counts,
+        "daily": daily,
+    }
+
+
+@router.get(
+    "/sellers/{seller_id}/orders.csv",
+    summary="Export one shop's orders as CSV (honors the same window as shop stats)",
+)
+def export_seller_orders_csv(
+    seller_id: int,
+    start: date | None = Query(default=None, description="Window start (YYYY-MM-DD, inclusive)"),
+    end: date | None = Query(default=None, description="Window end (YYYY-MM-DD, inclusive)"),
+    db: Session = Depends(get_db),
+    admin: Seller = Depends(get_current_admin),  # noqa: ARG001 — guards access
+) -> StreamingResponse:
+    """Same columns as the seller's own export; scoped to the shop and
+    window an admin picks on the shop-detail report."""
+    seller = db.get(Seller, seller_id)
+    if seller is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Seller not found.")
+
+    today = business_today()
+    if start is None and end is None:
+        window_start, window_end = today - timedelta(days=29), today
+    elif start is None or end is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Custom range needs both start and end dates.",
+        )
+    elif start > end:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Start date must be before (or equal to) the end date.",
+        )
+    elif (end - start).days + 1 > 366:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Custom range can span at most one year.",
+        )
+    else:
+        window_start, window_end = start, end
+
+    window_start_dt, _ = day_bounds_utc(window_start)
+    _, window_end_dt = day_bounds_utc(window_end)
+
+    orders = (
+        db.query(Order)
+        .filter(
+            Order.seller_id == seller.id,
+            Order.created_at >= window_start_dt,
+            Order.created_at < window_end_dt,
+        )
+        .order_by(Order.created_at.desc(), Order.id.desc())
+        .all()
+    )
+
+    buffer = io.StringIO()
+    # UTF-8 BOM so Excel detects the encoding (names can be Bengali)
+    buffer.write("﻿")
+    writer = csv.writer(buffer)
+    writer.writerow(
+        [
+            "Order #",
+            "Date",
+            "Customer name",
+            "Phone",
+            "Email",
+            "Address",
+            "Items",
+            "Total (Tk)",
+            "Status",
+            "Source",
+            "Tracking code",
+            "Notes",
+        ]
+    )
+    for order in orders:
+        writer.writerow(
+            [
+                order.order_number,
+                to_business_time(order.created_at).strftime("%Y-%m-%d %H:%M"),
+                order.customer_name,
+                order.customer_phone,
+                order.customer_email or "",
+                order.customer_address or "",
+                "; ".join(f"{item['name']} x{item['quantity']}" for item in order.items),
+                f"{order.total_price:.2f}",
+                order.status,
+                order.source,
+                order.tracking_code,
+                order.notes or "",
+            ]
+        )
+
+    filename = f"orderkoi-{seller.store_slug}-{window_start.isoformat()}-to-{window_end.isoformat()}.csv"
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get(
