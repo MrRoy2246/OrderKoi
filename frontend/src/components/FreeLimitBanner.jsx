@@ -3,6 +3,30 @@ import { useAuth } from "../auth/AuthContext";
 import Icon from "./icons";
 
 /**
+ * The free-plan allowance as segmented pips — one per free order.
+ * Filled pips are spent; the count of hollow ones IS what's left.
+ * Past 75% used the pips turn amber (a calm "getting close", never
+ * an error tone). Pro (plan_limit == null) shows nothing.
+ */
+export function FreeOrderPips({ limit, used }) {
+  if (limit == null || limit <= 0) return null;
+  const warn = used / limit >= 0.75;
+  const pips = Array.from({ length: limit }, (_, i) => i < used);
+
+  return (
+    <span
+      className={`free-pips${warn ? " free-pips--warn" : ""}`}
+      role="img"
+      aria-label={`${limit - used} of ${limit} free orders left`}
+    >
+      {pips.map((filled, i) => (
+        <span key={i} className={`free-pip${filled ? " free-pip--filled" : ""}`} />
+      ))}
+    </span>
+  );
+}
+
+/**
  * The focused "you've hit the free limit" banner. Shown on the seller's
  * Dashboard and Orders pages while the account is on Free and the
  * one-time order allowance is used up — the store is effectively

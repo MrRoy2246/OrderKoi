@@ -6,7 +6,7 @@ import { BarChart, Sparkline } from "../components/Charts";
 import Icon from "../components/icons";
 import { SkeletonCard } from "../components/States";
 import StatusBreakdown from "../components/StatusBreakdown";
-import FreeLimitBanner from "../components/FreeLimitBanner";
+import FreeLimitBanner, { FreeOrderPips } from "../components/FreeLimitBanner";
 import { ordersLink } from "../utils/businessDate";
 import { formatTk, parseServerDate } from "../utils/orderStatus";
 
@@ -48,19 +48,13 @@ function SubscriptionCard({ seller, stats }) {
   const daysLeft = expiry ? Math.ceil((expiry - new Date()) / DAY_MS) : null;
   const active = pro && (!expiry || daysLeft > 0);
 
-  // Free-plan allowance meter (one-time, not monthly) — visible while
-  // there's runway left, colored by how close the limit is
+  // Free-plan allowance (one-time, not monthly) — shown as pips while
+  // there's runway left; amber past 75% used. The full-limit banner
+  // handles the exhausted case, Pro shows nothing.
   const limit = stats?.plan_limit ?? null;
   const used = stats?.month_orders ?? 0;
-  const showFreeMeter =
-    !active && limit != null && used < limit && limit > 0;
   const remaining = Math.max(limit - used, 0);
-  const freeMeter = showFreeMeter
-    ? {
-        pct: Math.min(Math.max((used / limit) * 100, 4), 100),
-        tone: used / limit >= 0.75 ? "warn" : "free",
-      }
-    : null;
+  const showFreeMeter = !active && limit != null && used < limit && limit > 0;
 
   let headline, subline, meter;
 
@@ -82,17 +76,6 @@ function SubscriptionCard({ seller, stats }) {
   } else {
     headline = "Free plan";
     subline = `First ${FREE_PLAN_ORDERS} orders free — unlimited on Pro`;
-    meter = freeMeter
-      ? {
-          label:
-            remaining === 1
-              ? "1 free order left"
-              : `${remaining} free orders left`,
-          detail: `${used} of ${limit} used`,
-          pct: freeMeter.pct,
-          tone: freeMeter.tone,
-        }
-      : undefined;
   }
 
   return (
@@ -110,6 +93,15 @@ function SubscriptionCard({ seller, stats }) {
             </div>
             <span className="subscription-meter-label">
               {meter.label} <span className="subscription-meter-detail">· {meter.detail}</span>
+            </span>
+          </div>
+        )}
+        {showFreeMeter && (
+          <div className="subscription-freemeter">
+            <FreeOrderPips limit={limit} used={used} />
+            <span className="subscription-freemeter-label">
+              {remaining === 1 ? "1 free order left" : `${remaining} free orders left`}{" "}
+              <span className="subscription-meter-detail">· {used} of {limit} used</span>
             </span>
           </div>
         )}
