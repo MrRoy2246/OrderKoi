@@ -1114,6 +1114,216 @@ textarea {
   white-space: nowrap;
 }
 
+/* ---- Shared charts (Charts.jsx) ---- */
+
+/* Revenue line overlay on the bar chart — sits behind the bars' hover
+   state but above the track, sized to the same flex height */
+.chart-line-svg {
+  position: absolute;
+  inset: 18px 0 16px 0; /* below the count row, above the labels */
+  width: 100%;
+  height: calc(100% - 34px);
+  pointer-events: none;
+}
+
+.chart {
+  position: relative;
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--success);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.85;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Chart legend — quiet swatches under a card header */
+.chart-legend {
+  display: inline-flex;
+  gap: 12px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.chart-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.chart-legend-swatch--bar {
+  background: var(--primary);
+  border-radius: 2px 2px 1px 1px;
+}
+
+.chart-legend-swatch--line {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--success);
+}
+
+/* Donut chart */
+.donut-wrap {
+  display: flex;
+  gap: 28px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 8px 4px;
+}
+
+.donut {
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-1);
+}
+
+.donut-hole {
+  width: 62%;
+  height: 62%;
+  background: var(--surface);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+
+.donut-caption {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  text-align: center;
+}
+
+.donut-legend {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.donut-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.donut-legend-label {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.donut-legend-value {
+  color: var(--muted);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sparkline in stat tiles */
+.sparkline {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Admin chart grid — two monthly charts side by side on wide screens */
+.admin-chart-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 900px) {
+  .admin-chart-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Comp toggle — the "give this free" switch in the Pro grant modal */
+.comp-toggle {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--primary-tint);
+  cursor: pointer;
+  transition: border-color var(--t-fast), background var(--t-fast);
+}
+
+.comp-toggle--on {
+  border-color: var(--primary);
+  background: var(--primary-tint-strong);
+}
+
+.comp-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.comp-toggle-track {
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  position: relative;
+  flex-shrink: 0;
+  margin-top: 2px;
+  transition: background var(--t-fast);
+}
+
+.comp-toggle--on .comp-toggle-track {
+  background: var(--primary);
+}
+
+.comp-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-1);
+  transition: transform var(--t-fast);
+}
+
+.comp-toggle--on .comp-toggle-thumb {
+  transform: translateX(16px);
+}
+
+.comp-toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.comp-toggle-text strong {
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.comp-toggle-text span {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 /* Status breakdown */
 .status-breakdown {
   display: flex;

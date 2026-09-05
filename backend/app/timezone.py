@@ -16,6 +16,10 @@ from app.config import get_settings
 
 _tz = ZoneInfo(get_settings().app_timezone)
 
+# Exposed for route code that needs to build local datetimes itself
+# (e.g. month boundaries for chart buckets) — still one source of truth.
+business_tz = _tz
+
 
 def business_now() -> datetime:
     """Current instant, aware, in the business timezone."""

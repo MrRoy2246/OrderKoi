@@ -4,7 +4,7 @@ import enum
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -162,6 +162,9 @@ class SubscriptionEvent(Base):
     event: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     # paid-for duration for subscribed/renewed; None for cancelled
     months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Comp (free) grant: admin gave this Pro time for free — comp rows
+    # are excluded from subscription revenue totals
+    comp: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # human context, e.g. "active until 1 Mar 2027" or "cancelled by seller"
     note: Mapped[str | None] = mapped_column(String(200), nullable=True)
 

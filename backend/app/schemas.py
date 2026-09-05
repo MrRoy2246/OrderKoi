@@ -77,6 +77,21 @@ class RecentSignupOut(BaseModel):
     created_at: datetime
 
 
+class MonthCount(BaseModel):
+    """One month bucket in the admin's chart series (YYYY-MM)."""
+
+    month: str
+    count: int
+
+
+class MonthValue(BaseModel):
+    """One month bucket with a money value attached (YYYY-MM)."""
+
+    month: str
+    count: int
+    value: float
+
+
 class AdminStatsOut(BaseModel):
     """Platform-wide overview for the admin."""
     total_sellers: int
@@ -91,6 +106,14 @@ class AdminStatsOut(BaseModel):
     gmv_this_month: float
     new_sellers_30d: int
     recent_signups: list[RecentSignupOut]
+    # Subscription money — Pro activations the sellers actually paid
+    # for (comp grants are excluded), computed from the ledger
+    subscription_revenue_total: float = 0.0
+    subscription_revenue_30d: float = 0.0
+    # Chart series (business-timezone months, oldest first)
+    orders_daily: list["DailyCount"] = []  # last 30 days
+    revenue_monthly: list[MonthValue] = []  # last 12 months, GMV
+    sellers_monthly: list[MonthCount] = []  # last 12 months, signups
 
 
 class PlanUpdate(BaseModel):
@@ -101,6 +124,17 @@ class PlanUpdate(BaseModel):
     # active Pro extends from its current expiry) — same stacking rule
     # as approved upgrade requests, so paid time is never lost.
     months: Literal[1, 6, 12] | None = None
+    # Comp grant: this Pro time is free (e.g. a gift month, a support
+    # case). Comp activations are marked in the ledger and excluded
+    # from subscription revenue totals.
+    comp: bool = False
+
+
+# Pro prices — single source of truth for the backend. Must stay in
+# sync with frontend/src/utils/proPricing.js (the frontend shows the
+# same numbers to sellers). Used to compute subscription revenue from
+# the ledger's months.
+PRO_PRICES = {1: 299, 6: 1499, 12: 2499}
 
 
 # ---------- Upgrade requests ----------
@@ -153,6 +187,7 @@ class SubscriptionEventOut(BaseModel):
     seller_id: int
     event: Literal["subscribed", "renewed", "cancelled"]
     months: int | None
+    comp: bool = False
     note: str | None
     created_at: datetime
 
@@ -290,6 +325,14 @@ class DailyCount(BaseModel):
     count: int
 
 
+class DailyValue(BaseModel):
+    """One day bucket with a money value attached (YYYY-MM-DD)."""
+
+    date: str
+    count: int
+    value: float
+
+
 class StatsSummary(BaseModel):
     """Dashboard overview for the logged-in seller."""
     range: Literal["today", "7d", "30d", "all", "custom"]
@@ -300,6 +343,6 @@ class StatsSummary(BaseModel):
     cancelled_orders: int
     revenue: float  # non-cancelled orders within the range
     status_counts: dict[str, int]  # within the range
-    daily: list[DailyCount]  # one bar per day of the range (max 1 year)
+    daily: list[DailyValue]  # one bar per day of the range (max 1 year)
     month_orders: int  # orders this calendar month (free-plan usage meter)
     plan_limit: int | None  # monthly cap when on Free; None when on Pro

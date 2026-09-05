@@ -19,12 +19,14 @@ function formatDate(value) {
 }
 
 /**
- * Modal for granting Pro to a shop by hand (cash sales, support cases).
- * The duration is required — no accidental lifetime Pro — and extends
- * stack on the current expiry, exactly like approved upgrade requests.
+ * Modal for granting Pro to a shop by hand (cash sales, support cases,
+ * and free "comp" gifts). The duration is required — no accidental
+ * lifetime Pro — and extends stack on the current expiry, exactly like
+ * approved upgrade requests.
  */
 export default function AdminProModal({ seller, onClose, onDone }) {
   const [selected, setSelected] = useState(1);
+  const [comp, setComp] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
@@ -39,7 +41,7 @@ export default function AdminProModal({ seller, onClose, onDone }) {
     setError(null);
     setSubmitting(true);
     try {
-      const updated = await api.admin.setPlan(seller.id, "pro", selected);
+      const updated = await api.admin.setPlan(seller.id, "pro", selected, comp);
       onDone(updated);
     } catch (err) {
       setError(getErrorMessage(err, "Could not update the plan."));
@@ -95,6 +97,26 @@ export default function AdminProModal({ seller, onClose, onDone }) {
               ))}
             </div>
 
+            {/* Free access (comp) — gift Pro instead of recording a sale */}
+            <label className={`comp-toggle${comp ? " comp-toggle--on" : ""}`}>
+              <input
+                type="checkbox"
+                checked={comp}
+                onChange={(e) => setComp(e.target.checked)}
+              />
+              <span className="comp-toggle-track" aria-hidden="true">
+                <span className="comp-toggle-thumb" />
+              </span>
+              <span className="comp-toggle-text">
+                <strong>Give this free</strong>
+                <span>
+                  {comp
+                    ? "A gift — not counted in subscription earnings, and the seller gets an email."
+                    : "For gifts/support cases: the seller pays nothing and this grant is excluded from earnings."}
+                </span>
+              </span>
+            </label>
+
             {error && (
               <div className="alert alert--error" role="alert">
                 {error}
@@ -115,7 +137,9 @@ export default function AdminProModal({ seller, onClose, onDone }) {
               <Icon name="sparkles" size={15} />
               {submitting
                 ? "Saving…"
-                : `${active ? "Extend" : "Activate"} Pro — ${chosen.label}`}
+                : comp
+                  ? `Grant free Pro — ${chosen.label}`
+                  : `${active ? "Extend" : "Activate"} Pro — ${chosen.label}`}
             </button>
           </div>
         </form>

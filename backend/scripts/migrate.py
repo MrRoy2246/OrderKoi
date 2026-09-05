@@ -28,6 +28,9 @@ NEW_COLUMNS = {
     "upgrade_requests": {
         "granted_until": "ALTER TABLE upgrade_requests ADD COLUMN granted_until DATETIME",
     },
+    "subscription_events": {
+        "comp": "ALTER TABLE subscription_events ADD COLUMN comp BOOLEAN NOT NULL DEFAULT 0",
+    },
 }
 
 

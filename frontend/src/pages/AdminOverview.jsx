@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, getErrorMessage } from "../api/client";
+import { DonutChart, MonthlyBars, Sparkline } from "../components/Charts";
 import Icon from "../components/icons";
 import { ErrorState, SkeletonCard } from "../components/States";
 import { formatTk, parseServerDate } from "../utils/orderStatus";
 
 /** A headline metric — navigates when `to` is given. */
-function StatTile({ icon, label, value, hint, accent, to, title }) {
+function StatTile({ icon, label, value, hint, accent, to, title, spark }) {
   const navigate = useNavigate();
   const content = (
     <>
@@ -18,6 +19,7 @@ function StatTile({ icon, label, value, hint, accent, to, title }) {
         <span className="stat-label">{label}</span>
         {hint && <span className="stat-hint">{hint}</span>}
       </div>
+      {spark && spark.length > 1 && <Sparkline data={spark} />}
       {to && (
         <span className="stat-go" aria-hidden="true">
           <Icon name="arrowRight" size={16} />
@@ -99,10 +101,6 @@ export default function AdminOverview() {
       ? Math.round((stats.pro_sellers / stats.total_sellers) * 100)
       : 0;
   const monthName = new Date().toLocaleDateString(undefined, { month: "long" });
-  const proPct =
-    stats.total_sellers > 0
-      ? (stats.pro_sellers / stats.total_sellers) * 100
-      : 0;
 
   return (
     <div className="admin-page">
@@ -128,7 +126,7 @@ export default function AdminOverview() {
         </section>
       )}
 
-      {/* The four numbers that define the business */}
+      {/* The numbers that define the business */}
       <section className="stat-grid">
         <StatTile
           icon="store"
@@ -158,6 +156,7 @@ export default function AdminOverview() {
           value={stats.total_orders}
           hint={`${stats.sellers_with_orders} of ${stats.total_sellers} sellers have orders`}
           accent="blue"
+          spark={stats.orders_daily?.map((d) => d.count)}
         />
         <StatTile
           icon="banknote"
@@ -165,6 +164,72 @@ export default function AdminOverview() {
           value={formatTk(stats.platform_revenue)}
           hint="total value of non-cancelled orders"
           accent="green"
+        />
+        <StatTile
+          icon="creditCard"
+          label="Subscription earnings"
+          value={formatTk(stats.subscription_revenue_total)}
+          hint="what sellers paid for Pro — comps excluded"
+          accent="amber"
+          to="/admin/requests"
+          title="See the subscription ledger"
+          spark={stats.revenue_monthly?.map((m) => m.value)}
+        />
+        <StatTile
+          icon="chartBar"
+          label="Earned · last 30 days"
+          value={formatTk(stats.subscription_revenue_30d)}
+          hint="Pro payments in the last 30 days"
+          accent="green"
+        />
+      </section>
+
+      {/* Charts — orders per day, GMV per month, growth per month */}
+      <section className="card">
+        <div className="card-header-row">
+          <h3>Orders — last 30 days</h3>
+          <span className="chart-legend" aria-hidden="true">
+            <span className="chart-legend-item">
+              <span className="chart-legend-swatch chart-legend-swatch--bar" />
+              orders/day
+            </span>
+          </span>
+        </div>
+        <MonthlyBars
+          data={stats.orders_daily.map((d) => ({ key: d.date, count: d.count }))}
+          valueLabel="orders"
+        />
+      </section>
+
+      <div className="admin-chart-grid">
+        <section className="card">
+          <div className="card-header-row">
+            <h3>Gross order value — last 12 months</h3>
+          </div>
+          <MonthlyBars data={stats.revenue_monthly} valueLabel="GMV" />
+        </section>
+        <section className="card">
+          <div className="card-header-row">
+            <h3>New sellers — last 12 months</h3>
+          </div>
+          <MonthlyBars data={stats.sellers_monthly} valueLabel="signups" />
+        </section>
+      </div>
+
+      {/* Plan mix — donut */}
+      <section className="card admin-plan-mix-card">
+        <div className="card-header-row">
+          <h3>Plan mix</h3>
+          <span className="admin-mix-total">
+            {stats.pro_sellers} Pro · {stats.free_sellers} Free
+          </span>
+        </div>
+        <DonutChart
+          caption={`${stats.total_sellers} shops`}
+          slices={[
+            { label: "Pro", value: stats.pro_sellers, color: "var(--primary)" },
+            { label: "Free", value: stats.free_sellers, color: "var(--border-strong)" },
+          ]}
         />
       </section>
 
@@ -191,34 +256,6 @@ export default function AdminOverview() {
           Free sellers can create 50 orders a month — beyond that they need Pro,
           which they pay for via bKash/Nagad and you activate after verifying.
         </p>
-      </section>
-
-      <section className="card">
-        <div className="card-header-row">
-          <h3>Plan mix</h3>
-          <span className="admin-mix-total">
-            {stats.pro_sellers} Pro · {stats.free_sellers} Free
-          </span>
-        </div>
-        <div
-          className="admin-mix"
-          role="img"
-          aria-label={`${stats.pro_sellers} Pro sellers out of ${stats.total_sellers} total (${conversion}%)`}
-        >
-          <div className="admin-mix-track">
-            <div className="admin-mix-fill admin-mix-fill--pro" style={{ width: `${proPct}%` }} />
-          </div>
-          <div className="admin-mix-legend">
-            <span className="admin-mix-legend-item">
-              <span className="badge-dot admin-mix-dot--pro" aria-hidden="true" />
-              Pro {conversion}%
-            </span>
-            <span className="admin-mix-legend-item">
-              <span className="badge-dot admin-mix-dot--free" aria-hidden="true" />
-              Free {100 - conversion}%
-            </span>
-          </div>
-        </div>
       </section>
 
       <section className="card">

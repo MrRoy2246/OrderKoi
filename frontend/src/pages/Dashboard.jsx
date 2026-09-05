@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, getErrorMessage } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { BarChart, Sparkline } from "../components/Charts";
 import Icon from "../components/icons";
 import { SkeletonCard } from "../components/States";
 import { ordersLink } from "../utils/businessDate";
@@ -99,44 +100,18 @@ function SubscriptionCard({ seller, stats }) {
   );
 }
 
-/** Pure-CSS bar chart — one bar per day of the selected range. */
-function DailyChart({ daily }) {
-  const max = Math.max(...daily.map((d) => d.count), 1);
-  // Thin out labels so even a year of bars stays readable
-  const labelEvery = Math.max(1, Math.ceil(daily.length / 10));
-
-  return (
-    <div className="chart" role="img" aria-label="Orders per day">
-      {daily.map((day, index) => {
-        const date = new Date(`${day.date}T00:00:00`);
-        const label = date.toLocaleDateString(undefined, {
-          day: "numeric",
-          month: "short",
-        });
-        return (
-          <div
-            key={day.date}
-            className="chart-bar-wrap"
-            title={`${label}: ${day.count} order${day.count === 1 ? "" : "s"}`}
-          >
-            <span className="chart-count">{day.count > 0 ? day.count : ""}</span>
-            <div
-              className={`chart-bar${day.count > 0 ? "" : " chart-bar--empty"}`}
-              style={{ height: `${Math.max((day.count / max) * 100, day.count > 0 ? 6 : 2)}%` }}
-            />
-            <span className="chart-label">
-              {index % labelEvery === 0 || index === daily.length - 1
-                ? label.split(" ")[0]
-                : ""}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
+/** Orders chart — shared BarChart with the day's revenue as a line
+ * overlay (bars = order count, line = money, both per business day). */
+function OrdersChart({ daily }) {
+  const data = daily.map((day) => ({
+    key: day.date,
+    count: day.count,
+    value: day.value ?? 0,
+  }));
+  return <BarChart data={data} valuePrefix="Tk" />;
 }
 
-function StatCard({ icon, label, value, accent, to, title }) {
+function StatCard({ icon, label, value, accent, to, title, spark }) {
   const navigate = useNavigate();
   const content = (
     <>
@@ -147,6 +122,7 @@ function StatCard({ icon, label, value, accent, to, title }) {
         <span className="stat-value">{value}</span>
         <span className="stat-label">{label}</span>
       </div>
+      {spark && <Sparkline data={spark} color="var(--success)" />}
       {to && (
         <span className="stat-go" aria-hidden="true">
           <Icon name="arrowRight" size={16} />
@@ -360,6 +336,7 @@ export default function Dashboard() {
               accent="green"
               to={ordersLink(range, appliedRange)}
               title="View the orders this revenue came from"
+              spark={chartDays > 1 ? stats.daily.map((d) => d.value ?? 0) : undefined}
             />
           </section>
 
@@ -367,6 +344,16 @@ export default function Dashboard() {
             <section className="card">
               <div className="card-header-row">
                 <h3>Orders — {rangeLabel.toLowerCase()}</h3>
+                <span className="chart-legend" aria-hidden="true">
+                  <span className="chart-legend-item">
+                    <span className="chart-legend-swatch chart-legend-swatch--bar" />
+                    orders
+                  </span>
+                  <span className="chart-legend-item">
+                    <span className="chart-legend-swatch chart-legend-swatch--line" />
+                    revenue
+                  </span>
+                </span>
                 <Link
                   to={ordersLink(range, appliedRange)}
                   className="card-header-link"
@@ -375,7 +362,7 @@ export default function Dashboard() {
                   <Icon name="arrowRight" size={13} />
                 </Link>
               </div>
-              <DailyChart daily={stats.daily} />
+              <OrdersChart daily={stats.daily} />
             </section>
           )}
 

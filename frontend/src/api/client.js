@@ -232,10 +232,10 @@ export const api = {
   admin: {
     sellers: () => request("/admin/sellers"),
     stats: () => request("/admin/stats"),
-    setPlan: (sellerId, plan, months) =>
+    setPlan: (sellerId, plan, months, comp = false) =>
       request(`/admin/sellers/${sellerId}/plan`, {
         method: "PATCH",
-        body: JSON.stringify({ plan, ...(months ? { months } : {}) }),
+        body: JSON.stringify({ plan, ...(months ? { months } : {}), comp }),
       }),
     upgradeRequests: () => request("/admin/upgrade-requests"),
     handleUpgradeRequest: (requestId, action) =>

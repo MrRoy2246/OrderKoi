@@ -247,7 +247,123 @@ def test_plan_change_unknown_seller_404(client, admin_headers):
     assert response.status_code == 404
 
 
-# ---------- Free plan order limit ----------
+# ---------- Comp (free Pro) grants ----------
+
+def test_admin_comp_grant_marks_ledger_and_excludes_revenue(client, admin_headers, auth_headers, seller):
+    """A comp grant gives Pro like a normal one — but the ledger row is
+    flagged comp and subscription revenue ignores it entirely.
+    (The suite DB is shared, so revenue is compared before/after.)"""
+    before = client.get("/admin/stats", headers=admin_headers).json()
+
+    response = client.patch(
+        f"/admin/sellers/{seller['id']}/plan",
+        json={"plan": "pro", "months": 1, "comp": True},
+        headers=admin_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["plan"] == "pro"
+
+    # Ledger: flagged comp
+    events = client.get("/admin/subscription-events", headers=admin_headers).json()
+    mine = [e for e in events if e["seller_id"] == seller["id"]]
+    assert mine and mine[0]["comp"] is True
+    assert "free" in mine[0]["note"]
+
+    # Revenue: nothing counted from the comp grant
+    stats = client.get("/admin/stats", headers=admin_headers).json()
+    assert stats["subscription_revenue_total"] == before["subscription_revenue_total"]
+    assert stats["subscription_revenue_30d"] == before["subscription_revenue_30d"]
+
+
+def test_paid_activation_counts_in_subscription_revenue(client, admin_headers, seller):
+    """Paid manual activations DO count toward subscription revenue."""
+    before = client.get("/admin/stats", headers=admin_headers).json()
+    client.patch(
+        f"/admin/sellers/{seller['id']}/plan",
+        json={"plan": "pro", "months": 1},
+        headers=admin_headers,
+    )
+    stats = client.get("/admin/stats", headers=admin_headers).json()
+    assert stats["subscription_revenue_total"] == before["subscription_revenue_total"] + 299
+    assert stats["subscription_revenue_30d"] == before["subscription_revenue_30d"] + 299
+
+
+def test_comp_default_false_and_cumulative_revenue(client, admin_headers, seller):
+    """Normal grants don't set comp, and revenue sums across entries."""
+    before = client.get("/admin/stats", headers=admin_headers).json()
+    client.patch(
+        f"/admin/sellers/{seller['id']}/plan",
+        json={"plan": "pro", "months": 12},
+        headers=admin_headers,
+    )
+    events = client.get("/admin/subscription-events", headers=admin_headers).json()
+    mine = [e for e in events if e["seller_id"] == seller["id"]]
+    assert mine and mine[0]["comp"] is False
+
+    stats = client.get("/admin/stats", headers=admin_headers).json()
+    assert stats["subscription_revenue_total"] == before["subscription_revenue_total"] + 2499
+
+
+# ---------- Stats: chart series ----------
+
+def test_platform_stats_chart_series_shapes(client, admin_headers, auth_headers, seller, order):
+    stats = client.get("/admin/stats", headers=admin_headers).json()
+
+    # 30 daily buckets ending today
+    assert len(stats["orders_daily"]) == 30
+    assert stats["orders_daily"][-1]["count"] >= 1  # the conftest order
+
+    # 12 monthly buckets, oldest first, current month last
+    assert len(stats["revenue_monthly"]) == 12
+    assert len(stats["sellers_monthly"]) == 12
+    months = [m["month"] for m in stats["revenue_monthly"]]
+    assert months == sorted(months)
+    # The current month (Asia/Dhaka) holds the fresh order's GMV
+    assert stats["revenue_monthly"][-1]["value"] >= 1400
+    # And the fresh signup
+    assert stats["sellers_monthly"][-1]["count"] >= 1
+
+
+def test_platform_stats_comp_revenue_mixed(client, admin_headers, seller):
+    """Paid + comp grants: only the paid money shows up."""
+    before = client.get("/admin/stats", headers=admin_headers).json()
+    client.patch(
+        f"/admin/sellers/{seller['id']}/plan",
+        json={"plan": "pro", "months": 1},
+        headers=admin_headers,
+    )
+    client.patch(
+        f"/admin/sellers/{seller['id']}/plan",
+        json={"plan": "pro", "months": 6, "comp": True},
+        headers=admin_headers,
+    )
+    stats = client.get("/admin/stats", headers=admin_headers).json()
+    # only the paid month, not the comped 6 months
+    assert stats["subscription_revenue_total"] == before["subscription_revenue_total"] + 299
+
+
+# ---------- Seller stats: daily revenue series ----------
+
+def test_stats_daily_series_includes_revenue(client, auth_headers, order):
+    """Each daily bucket now carries the day's non-cancelled revenue."""
+    summary = client.get("/orders/stats/summary?range=7d", headers=auth_headers).json()
+    today = summary["daily"][-1]
+    assert today["count"] >= 1
+    assert today["value"] >= 1400  # the conftest order total
+    # Every bucket has both fields
+    assert all("value" in day and "count" in day for day in summary["daily"])
+
+
+def test_stats_daily_revenue_excludes_cancelled(client, auth_headers, order):
+    """Cancelling an order removes it from the day's revenue bucket."""
+    client.patch(
+        f"/orders/{order['id']}/status", json={"status": "cancelled"}, headers=auth_headers
+    )
+    summary = client.get("/orders/stats/summary?range=7d", headers=auth_headers).json()
+    today = summary["daily"][-1]
+    assert today["value"] == 0
+    assert summary["revenue"] == 0
+
 
 def test_free_plan_monthly_limit_enforced(client, auth_headers, monkeypatch):
     from app.routes import orders as orders_module

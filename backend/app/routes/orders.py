@@ -13,7 +13,7 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -22,7 +22,7 @@ from app.database import get_db
 from app.deps import get_current_seller
 from app.models import Order, OrderStatus, Seller, VALID_TRANSITIONS, pro_plan_active, utcnow
 from app.schemas import (
-    DailyCount,
+    DailyValue,
     OrderCreate,
     OrderListOut,
     OrderOut,
@@ -430,20 +430,32 @@ def stats_summary(
     # Group by the *business-local* date: an order at 20:00 UTC is
     # 02:00 next day in Dhaka and belongs on that day's bar. SQLite
     # date() modifiers do the shift in SQL (no per-row Python).
+    # Revenue rides along so the same series powers a money chart —
+    # cancelled orders count toward nothing (no bar, no money).
     day_expr = func.date(Order.created_at, *sqlite_shift_modifiers())
     daily_rows = (
-        db.query(day_expr, func.count(Order.id))
+        db.query(
+            day_expr,
+            func.count(Order.id),
+            func.coalesce(
+                func.sum(
+                    case((Order.status != OrderStatus.CANCELLED.value, Order.total_price))
+                ),
+                0.0,
+            ),
+        )
         .filter(owned, in_window)
         .group_by(day_expr)
         .all()
     )
-    daily_map = {str(day): count for day, count in daily_rows}
+    daily_map = {str(day): (int(count), round(float(total), 2)) for day, count, total in daily_rows}
 
     # Fill the full window so the chart shows quiet days too
     daily = [
-        DailyCount(
+        DailyValue(
             date=(window_start + timedelta(days=i)).isoformat(),
-            count=daily_map.get((window_start + timedelta(days=i)).isoformat(), 0),
+            count=daily_map.get((window_start + timedelta(days=i)).isoformat(), (0, 0.0))[0],
+            value=daily_map.get((window_start + timedelta(days=i)).isoformat(), (0, 0.0))[1],
         )
         for i in range(window_days)
     ]

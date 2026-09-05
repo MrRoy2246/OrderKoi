@@ -7,7 +7,7 @@ admin verifies the payment and activates the paid-for duration).
 """
 
 import calendar
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
@@ -31,11 +31,22 @@ from app.schemas import (
     AdminStatsOut,
     AdminSubscriptionEventOut,
     AdminUpgradeRequestOut,
+    MonthCount,
+    MonthValue,
+    DailyCount,
     PlanUpdate,
+    PRO_PRICES,
     RecentSignupOut,
     UpgradeRequestAction,
 )
-from app.timezone import month_start_utc
+from app.timezone import (
+    business_now,
+    business_today,
+    business_tz,
+    month_start_utc,
+    sqlite_shift_modifiers,
+    to_business_time,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -47,6 +58,24 @@ def _add_months(moment: datetime, months: int) -> datetime:
     month = month_index % 12 + 1
     day = min(moment.day, calendar.monthrange(year, month)[1])
     return moment.replace(year=year, month=month, day=day)
+
+
+def _subscription_revenue(db: Session, since: datetime | None = None) -> float:
+    """Total money sellers paid for Pro — comp (free) grants excluded.
+
+    Each paid ledger entry's months map to a price from PRO_PRICES;
+    entries with an unknown duration (data oddities) contribute nothing.
+    `since` (UTC, naive — how ledger timestamps are stored) limits the
+    sum to recent entries, e.g. the 30-day pulse.
+    """
+    query = db.query(SubscriptionEvent.months).filter(
+        SubscriptionEvent.event.in_(["subscribed", "renewed"]),
+        SubscriptionEvent.comp.is_(False),
+        SubscriptionEvent.months.isnot(None),
+    )
+    if since is not None:
+        query = query.filter(SubscriptionEvent.created_at >= since)
+    return float(sum(PRO_PRICES.get(months, 0) for (months,) in query.all()))
 
 
 @router.get(
@@ -166,6 +195,98 @@ def platform_stats(
         for s in recent
     ]
 
+    # Subscription money — what the sellers actually paid for Pro
+    # (comp grants don't count). `since` must be naive UTC to compare
+    # against the stored ledger timestamps.
+    subscription_revenue_total = _subscription_revenue(db)
+    subscription_revenue_30d = _subscription_revenue(
+        db, since=utcnow().replace(tzinfo=None) - timedelta(days=30)
+    )
+
+    # ---- Chart series (business-timezone buckets, oldest first) ----
+
+    # Orders per day, last 30 days
+    day_expr = func.date(Order.created_at, *sqlite_shift_modifiers())
+    daily_rows = (
+        db.query(
+            day_expr,
+            func.count(Order.id),
+            func.coalesce(func.sum(Order.total_price), 0.0),
+        )
+        .filter(
+            Order.created_at >= utcnow() - timedelta(days=30),
+            Order.status != OrderStatus.CANCELLED.value,
+        )
+        .group_by(day_expr)
+        .all()
+    )
+    daily_map = {
+        str(day): (int(count), round(float(total), 2)) for day, count, total in daily_rows
+    }
+    orders_daily = [
+        DailyCount(
+            date=(business_today() - timedelta(days=29 - i)).isoformat(),
+            count=daily_map.get((business_today() - timedelta(days=29 - i)).isoformat(), (0, 0.0))[0],
+        )
+        for i in range(30)
+    ]
+
+    # Month buckets for GMV + signups: group by business-local YYYY-MM.
+    # Keys come from plain (year, month) arithmetic on the *local* date —
+    # UTC-space month arithmetic drifts by the tz offset (Dhaka +6) and
+    # produces duplicate or skipped months.
+    month_expr = func.strftime("%Y-%m", Order.created_at, *sqlite_shift_modifiers())
+    now_local = business_now()
+    month_index = now_local.year * 12 + (now_local.month - 1) - 11  # 11 months back
+    back_year, back_month = divmod(month_index, 12)
+    first_bucket_start = (
+        datetime(back_year, back_month + 1, 1, tzinfo=business_tz)
+        .astimezone(timezone.utc)
+        .replace(tzinfo=None)
+    )
+    gmv_rows = (
+        db.query(
+            month_expr,
+            func.count(Order.id),
+            func.coalesce(func.sum(Order.total_price), 0.0),
+        )
+        .filter(
+            Order.created_at >= first_bucket_start,
+            Order.status != OrderStatus.CANCELLED.value,
+        )
+        .group_by(month_expr)
+        .all()
+    )
+    gmv_map = {
+        str(month): (int(count), round(float(total), 2)) for month, count, total in gmv_rows
+    }
+
+    seller_month_expr = func.strftime("%Y-%m", Seller.created_at, *sqlite_shift_modifiers())
+    signup_rows = (
+        db.query(seller_month_expr, func.count(Seller.id))
+        .filter(
+            Seller.role == "seller",
+            Seller.created_at >= first_bucket_start,
+        )
+        .group_by(seller_month_expr)
+        .all()
+    )
+    signup_map = {str(month): int(count) for month, count in signup_rows}
+
+    # Build the last 12 business months, oldest first
+    months_series = []
+    cursor = month_index
+    for _i in range(12):
+        year, month0 = divmod(cursor, 12)
+        key = f"{year:04d}-{month0 + 1:02d}"
+        count, value = gmv_map.get(key, (0, 0.0))
+        months_series.append(MonthValue(month=key, count=count, value=value))
+        cursor += 1
+    revenue_monthly = months_series
+    sellers_monthly = [
+        MonthCount(month=m.month, count=signup_map.get(m.month, 0)) for m in months_series
+    ]
+
     return {
         "total_sellers": len(shops),
         "pro_sellers": sum(1 for seller in shops if pro_plan_active(seller)),
@@ -178,6 +299,11 @@ def platform_stats(
         "gmv_this_month": gmv_this_month,
         "new_sellers_30d": new_sellers_30d,
         "recent_signups": recent_signups,
+        "subscription_revenue_total": round(subscription_revenue_total, 2),
+        "subscription_revenue_30d": round(subscription_revenue_30d, 2),
+        "orders_daily": orders_daily,
+        "revenue_monthly": revenue_monthly,
+        "sellers_monthly": sellers_monthly,
     }
 
 
@@ -362,6 +488,7 @@ def list_subscription_events(
                 "seller_id": seller.id,
                 "event": event.event,
                 "months": event.months,
+                "comp": event.comp,
                 "note": event.note,
                 "created_at": event.created_at,
                 "store_name": seller.store_name,
@@ -419,16 +546,19 @@ def update_seller_plan(
     db.refresh(seller)
 
     # Ledger: manual changes are recorded too — the audit trail stays
-    # complete even when the admin flips plans by hand
+    # complete even when the admin flips plans by hand. Comp grants are
+    # flagged so they don't count as subscription revenue.
     if payload.plan == "pro" and not was_pro:
         db.add(
             SubscriptionEvent(
                 seller_id=seller.id,
                 event="subscribed",
                 months=payload.months,
+                comp=payload.comp,
                 note=(
                     f"activated manually by admin ({payload.months} month"
-                    f"{'s' if payload.months > 1 else ''})"
+                    f"{'s' if payload.months > 1 else ''}"
+                    + (", free" if payload.comp else "") + ")"
                     if payload.months
                     else "activated manually by admin"
                 ),
@@ -449,6 +579,7 @@ def update_seller_plan(
                 seller_id=seller.id,
                 event="renewed",
                 months=payload.months,
+                comp=payload.comp,
                 note=(
                     f"extended manually by admin until "
                     f"{seller.plan_expires_at.strftime('%d %b %Y')}"
@@ -456,6 +587,26 @@ def update_seller_plan(
             )
         )
     db.commit()
+
+    # A comp grant is a gift — tell the seller they got free Pro time
+    if payload.plan == "pro" and payload.months is not None and payload.comp:
+        until = seller.plan_expires_at
+        until_text = until.strftime("%d %b %Y") if until else "never (lifetime)"
+        send_email(
+            to=seller.email,
+            subject="You've received free Pro access!",
+            body=(
+                "Good news — the OrderKoi team has granted you Pro access "
+                "for free!\n\n"
+                f"Pro is active until: {until_text}\n"
+                f"Duration granted: {payload.months} month"
+                f"{'s' if payload.months > 1 else ''}\n\n"
+                "Unlimited orders, and your customers keep ordering through "
+                "your form link without limits — at no cost to you.\n\n"
+                "Enjoy, and thank you for being part of OrderKoi!\n"
+                "— OrderKoi"
+            ),
+        )
 
     order_stats = (
         db.query(
