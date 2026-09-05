@@ -299,7 +299,6 @@ export default function AdminOverview() {
         : monthly
             .filter((m) => m.count > 0)
             .map((m) => ({ key: m.key, value: Math.round((m.value / m.count) * 100) / 100 }));
-  const monthName = new Date().toLocaleDateString(undefined, { month: "long" });
   // New signups over the chart's actual series — the meta line must
   // describe what's plotted, not a fixed 30-day pulse
   const newSellersInSeries = stats.sellers_monthly.reduce((sum, m) => sum + m.count, 0);
@@ -350,22 +349,24 @@ export default function AdminOverview() {
         defaultRange={DEFAULT_RANGE}
       />
 
-      {/* KPI grid — six headline metrics, all real API values */}
+      {/* KPI grid — six headline metrics, all real API values.
+          Every number follows the global date filter; all-time
+          context lives in the hints. */}
       <section className="kpi-grid">
         <KpiCard
           icon="creditCard"
-          label="Your earnings"
-          value={formatTk(stats.subscription_revenue_total)}
-          hint={`${formatTk(stats.subscription_revenue_30d)} in the last 30 days`}
+          label={`Your earnings · ${windowLabel}`}
+          value={formatTk(subsInWindow)}
+          hint={`All-time: ${formatTk(stats.subscription_revenue_total)}`}
           accent="orange"
           to="/admin/requests"
           title="See the subscription ledger"
         />
         <KpiCard
           icon="banknote"
-          label="Seller revenue"
-          value={formatTk(stats.platform_revenue)}
-          hint={`${formatTk(stats.gmv_this_month)} this month · ${stats.orders_this_month} order${stats.orders_this_month === 1 ? "" : "s"}`}
+          label={`Seller revenue · ${windowLabel}`}
+          value={formatTk(revenueInWindow)}
+          hint={`All-time: ${formatTk(stats.platform_revenue)} · this month: ${formatTk(stats.gmv_this_month)}`}
           accent="green"
           to="/admin/sellers"
           title="See sellers and their order value"
@@ -388,8 +389,8 @@ export default function AdminOverview() {
           label="Total sellers"
           value={stats.total_sellers}
           hint={
-            stats.new_sellers_30d > 0
-              ? `+${stats.new_sellers_30d} joined in the last 30 days`
+            newSellersInSeries > 0
+              ? `+${newSellersInSeries} joined in ${windowLabel}`
               : `${stats.sellers_with_orders} sellers with orders`
           }
           accent="blue"
@@ -407,9 +408,9 @@ export default function AdminOverview() {
         />
         <KpiCard
           icon="users"
-          label="New sellers · 30 days"
-          value={stats.new_sellers_30d}
-          hint={`${monthName} so far: ${stats.orders_this_month} orders`}
+          label={`New sellers · ${windowLabel}`}
+          value={newSellersInSeries}
+          hint={`${stats.sellers_with_orders} sellers with orders · all time`}
           accent="green"
         />
       </section>
