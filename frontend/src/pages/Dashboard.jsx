@@ -40,13 +40,27 @@ function toDateInput(date) {
  * The subscription card — the seller always knows exactly where they
  * stand: plan, expiry date, and days remaining on Pro. Clicking it
  * opens the upgrade/renew options in Settings. New sellers get a
- * one-time free order allowance; Pro is unlimited.
+ * one-time free order allowance (metered here); Pro is unlimited.
  */
-function SubscriptionCard({ seller }) {
+function SubscriptionCard({ seller, stats }) {
   const pro = seller?.plan === "pro";
   const expiry = seller?.plan_expires_at ? parseServerDate(seller.plan_expires_at) : null;
   const daysLeft = expiry ? Math.ceil((expiry - new Date()) / DAY_MS) : null;
   const active = pro && (!expiry || daysLeft > 0);
+
+  // Free-plan allowance meter (one-time, not monthly) — visible while
+  // there's runway left, colored by how close the limit is
+  const limit = stats?.plan_limit ?? null;
+  const used = stats?.month_orders ?? 0;
+  const showFreeMeter =
+    !active && limit != null && used < limit && limit > 0;
+  const remaining = Math.max(limit - used, 0);
+  const freeMeter = showFreeMeter
+    ? {
+        pct: Math.min(Math.max((used / limit) * 100, 4), 100),
+        tone: used / limit >= 0.75 ? "warn" : "free",
+      }
+    : null;
 
   let headline, subline, meter;
 
@@ -68,6 +82,17 @@ function SubscriptionCard({ seller }) {
   } else {
     headline = "Free plan";
     subline = `First ${FREE_PLAN_ORDERS} orders free — unlimited on Pro`;
+    meter = freeMeter
+      ? {
+          label:
+            remaining === 1
+              ? "1 free order left"
+              : `${remaining} free orders left`,
+          detail: `${used} of ${limit} used`,
+          pct: freeMeter.pct,
+          tone: freeMeter.tone,
+        }
+      : undefined;
   }
 
   return (
@@ -323,7 +348,7 @@ export default function Dashboard() {
 
       <FreeLimitBanner stats={stats} />
 
-      <SubscriptionCard seller={seller} />
+      <SubscriptionCard seller={seller} stats={stats} />
 
       {loading ? (
         <div className="stat-grid" aria-hidden="true">

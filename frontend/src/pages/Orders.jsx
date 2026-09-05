@@ -271,6 +271,37 @@ export default function Orders() {
 
       <FreeLimitBanner stats={planStats} />
 
+      {/* Slim allowance reminder while there's still runway — becomes
+          the focused banner above once the limit is hit */}
+      {planStats?.plan_limit != null && planStats.month_orders < planStats.plan_limit && (
+        <div className="free-allowance-note" role="status">
+          <div className="free-allowance-track" aria-hidden="true">
+            <div
+              className={`free-allowance-fill${
+                planStats.month_orders / planStats.plan_limit >= 0.75
+                  ? " free-allowance-fill--warn"
+                  : ""
+              }`}
+              style={{
+                width: `${Math.min(
+                  Math.max((planStats.month_orders / planStats.plan_limit) * 100, 4),
+                  100
+                )}%`,
+              }}
+            />
+          </div>
+          <span>
+            {planStats.plan_limit - planStats.month_orders === 1
+              ? "1 free order left"
+              : `${planStats.plan_limit - planStats.month_orders} free orders left`}{" "}
+            <span className="free-allowance-detail">
+              ({planStats.month_orders} of {planStats.plan_limit} used)
+            </span>
+          </span>
+          <Link to="/dashboard/settings">Upgrade to Pro</Link>
+        </div>
+      )}
+
       {error && (
         <div className="alert alert--error" role="alert">
           {error}

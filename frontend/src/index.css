@@ -523,10 +523,69 @@ textarea {
   flex-shrink: 0;
 }
 
+/* Slim free-allowance reminder — Orders page, while under the limit */
+.free-allowance-note {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-1);
+  margin-bottom: 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  flex-wrap: wrap;
+}
+
+.free-allowance-track {
+  width: 90px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.free-allowance-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+  transition: width var(--t);
+}
+
+.free-allowance-fill--warn {
+  background: var(--warning);
+}
+
+.free-allowance-detail {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.free-allowance-note a {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.free-allowance-note a:hover {
+  text-decoration: underline;
+}
+
 @media (max-width: 640px) {
   .free-limit-banner {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .free-allowance-note a {
+    margin-left: 0;
   }
 }
 
@@ -1867,6 +1926,12 @@ textarea {
 
 .subscription-meter--warn .subscription-meter-fill {
   background: var(--warning);
+}
+
+/* Free-plan allowance meter — the koi vermilion while there's plenty
+   of runway; flips to --warn (amber) at 75% used via JS */
+.subscription-meter--free .subscription-meter-fill {
+  background: var(--primary);
 }
 
 .subscription-meter--pro .subscription-meter-fill {
