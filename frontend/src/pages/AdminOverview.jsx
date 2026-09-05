@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, getErrorMessage } from "../api/client";
-import { DonutChart, MonthlyBars, Sparkline } from "../components/Charts";
+import { BarChart, DonutChart, Sparkline } from "../components/Charts";
 import Icon from "../components/icons";
 import { ErrorState, SkeletonCard } from "../components/States";
 import { formatTk, parseServerDate } from "../utils/orderStatus";
+
+/** The activity-chart window: one row of preset range tabs scoping
+ * every chart below it (single source of truth — no per-chart picks). */
+const RANGE_TABS = [
+  { days: 7, label: "7 days" },
+  { days: 30, label: "30 days" },
+  { days: 90, label: "90 days" },
+];
 
 /** A headline metric — navigates when `to` is given. */
 function StatTile({ icon, label, value, hint, accent, to, title, spark }) {
@@ -58,23 +66,34 @@ function formatDate(value) {
 /** Platform-owner view: the whole OrderKoi business at a glance. */
 export default function AdminOverview() {
   const navigate = useNavigate();
+  const [days, setDays] = useState(30);
   const [stats, setStats] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [fetching, setFetching] = useState(false);
 
-  const fetchStats = useCallback(() => {
-    setLoading(true);
+  // Refetch on window change. The first load shows skeletons; a
+  // refetch keeps the previous render on screen (dimmed) so switching
+  // windows doesn't flash empty frames — the spec's "hold the frame".
+  const fetchStats = useCallback((newDays) => {
+    setFetching(true);
     setError(null);
     api.admin
-      .stats()
-      .then(setStats)
-      .catch((err) => setError(getErrorMessage(err, "Could not load platform stats.")))
-      .finally(() => setLoading(false));
+      .stats(newDays)
+      .then((data) => {
+        setStats(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(getErrorMessage(err, "Could not load platform stats."));
+        setLoading(false);
+      })
+      .finally(() => setFetching(false));
   }, []);
 
   useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
+    fetchStats(days);
+  }, [days, fetchStats]);
 
   if (loading) {
     return (
@@ -89,10 +108,10 @@ export default function AdminOverview() {
     );
   }
 
-  if (error) {
+  if (error && !stats) {
     return (
       <div className="admin-page">
-        <ErrorState message={error} onRetry={fetchStats} />
+        <ErrorState message={error} onRetry={() => fetchStats(days)} />
       </div>
     );
   }
@@ -104,11 +123,17 @@ export default function AdminOverview() {
   const monthName = new Date().toLocaleDateString(undefined, { month: "long" });
 
   return (
-    <div className="admin-page">
+    <div className={`admin-page${fetching ? " admin-page--refetching" : ""}`}>
       <header className="page-header">
         <h1>Platform Overview</h1>
         <p>Your OrderKoi business, at a glance.</p>
       </header>
+
+      {error && (
+        <div className="alert alert--error" role="alert">
+          {error}
+        </div>
+      )}
 
       {stats.pending_upgrade_requests > 0 && (
         <section className="plan-banner plan-banner--action">
@@ -157,13 +182,10 @@ export default function AdminOverview() {
               {formatTk(stats.subscription_revenue_30d)} in the last 30 days
             </span>
           </div>
-          <MonthlyBars
-            data={stats.subscription_monthly.map((m) => ({
-              key: m.month,
-              count: m.count,
-              value: m.value,
-            }))}
-            valueLabel="earned"
+          <BarChart
+            data={stats.subscription_monthly.map((m) => ({ key: m.month, value: m.value }))}
+            measure="money"
+            height={120}
           />
           <p className="earnings-foot">
             From {stats.pro_sellers} active Pro seller{stats.pro_sellers === 1 ? "" : "s"} ·
@@ -189,13 +211,11 @@ export default function AdminOverview() {
               {stats.orders_this_month} order{stats.orders_this_month === 1 ? "" : "s"}
             </span>
           </div>
-          <MonthlyBars
-            data={stats.revenue_monthly.map((m) => ({
-              key: m.month,
-              count: m.count,
-              value: m.value,
-            }))}
-            valueLabel="GMV"
+          <BarChart
+            data={stats.revenue_monthly.map((m) => ({ key: m.month, value: m.value }))}
+            measure="money"
+            barColor="var(--success)"
+            height={120}
           />
           <p className="earnings-foot">
             This is your sellers' money — you don't take a cut. Your income is the Pro
@@ -203,6 +223,24 @@ export default function AdminOverview() {
           </p>
         </article>
       </section>
+
+      {/* Filter row — one place to scope every activity chart below.
+          Monthly series (12-month windows) are all-time views, so they
+          sit outside the day-window scope. */}
+      <div className="measure-tabs admin-range-tabs" role="tablist" aria-label="Activity window">
+        {RANGE_TABS.map((tab) => (
+          <button
+            key={tab.days}
+            type="button"
+            role="tab"
+            aria-selected={days === tab.days}
+            className={`measure-tab${days === tab.days ? " measure-tab--active" : ""}`}
+            onClick={() => setDays(tab.days)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
       {/* Platform pulse */}
       <section className="stat-grid">
@@ -230,8 +268,8 @@ export default function AdminOverview() {
         />
         <StatTile
           icon="package"
-          label="Total orders"
-          value={stats.total_orders}
+          label={`Orders · last ${days} days`}
+          value={stats.orders_daily.reduce((sum, d) => sum + d.count, 0)}
           hint={`${stats.sellers_with_orders} of ${stats.total_sellers} sellers have orders`}
           accent="blue"
           spark={stats.orders_daily?.map((d) => d.count)}
@@ -245,15 +283,12 @@ export default function AdminOverview() {
         />
       </section>
 
-      {/* Charts — activity and growth */}
+      {/* Charts — activity (scoped by the window tabs above) */}
       <section className="card">
         <div className="card-header-row">
-          <h3>Orders — last 30 days</h3>
+          <h3>Orders — last {days} days</h3>
         </div>
-        <MonthlyBars
-          data={stats.orders_daily.map((d) => ({ key: d.date, count: d.count }))}
-          valueLabel="orders"
-        />
+        <BarChart data={stats.orders_daily.map((d) => ({ key: d.date, value: d.count }))} />
       </section>
 
       <div className="admin-chart-grid">
@@ -261,26 +296,18 @@ export default function AdminOverview() {
           <div className="card-header-row">
             <h3>Sellers' income — last 12 months</h3>
           </div>
-          <MonthlyBars
-            data={stats.revenue_monthly.map((m) => ({
-              key: m.month,
-              count: m.count,
-              value: m.value,
-            }))}
-            valueLabel="GMV"
+          <BarChart
+            data={stats.revenue_monthly.map((m) => ({ key: m.month, value: m.value }))}
+            measure="money"
+            barColor="var(--success)"
           />
         </section>
         <section className="card">
           <div className="card-header-row">
             <h3>New sellers — last 12 months</h3>
           </div>
-          <MonthlyBars
-            data={stats.sellers_monthly.map((m) => ({
-              key: m.month,
-              count: m.count,
-              value: 0,
-            }))}
-            valueLabel="signups"
+          <BarChart
+            data={stats.sellers_monthly.map((m) => ({ key: m.month, value: m.count }))}
           />
         </section>
       </div>
@@ -297,7 +324,7 @@ export default function AdminOverview() {
           caption={`${stats.total_sellers} shops`}
           slices={[
             { label: "Pro", value: stats.pro_sellers, color: "var(--primary)" },
-            { label: "Free", value: stats.free_sellers, color: "var(--border-strong)" },
+            { label: "Free", value: stats.free_sellers, color: "var(--info)" },
           ]}
         />
       </section>

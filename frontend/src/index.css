@@ -1055,123 +1055,153 @@ textarea {
   color: var(--primary);
 }
 
-/* Bar chart */
-.chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  height: 170px;
-  padding-top: 18px;
-  overflow-x: auto;
-}
+/* ---- Shared charts (Charts.jsx) ----
+   The chart layer: SVG bars with hairline grids and y-ticks, hover
+   tooltips on every mark, and a screen-reader table twin. Text wears
+   text tokens (never the series color); grids are recessive. */
 
-.chart-bar-wrap {
-  flex: 1;
-  min-width: 12px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  height: 100%;
-  justify-content: flex-end;
-}
-
-.chart-count {
-  font-size: 10.5px;
-  font-weight: 700;
-  color: var(--muted);
-}
-
-.chart-bar {
-  width: 100%;
-  max-width: 26px;
-  border-radius: 4px 4px 2px 2px;
-  background: var(--primary);
-  opacity: 0.88;
-  transform-origin: bottom;
-  animation: grow-bar 500ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
-  transition: opacity var(--t-fast);
-}
-
-.chart-bar:hover {
-  opacity: 1;
-}
-
-.chart-bar--empty {
-  background: var(--border);
-  opacity: 1;
-}
-
-@keyframes grow-bar {
-  from { transform: scaleY(0); }
-  to { transform: scaleY(1); }
-}
-
-.chart-label {
-  font-size: 10.5px;
-  color: var(--faint);
-  min-height: 14px;
-  white-space: nowrap;
-}
-
-/* ---- Shared charts (Charts.jsx) ---- */
-
-/* Revenue line overlay on the bar chart — sits behind the bars' hover
-   state but above the track, sized to the same flex height */
-.chart-line-svg {
-  position: absolute;
-  inset: 18px 0 16px 0; /* below the count row, above the labels */
-  width: 100%;
-  height: calc(100% - 34px);
-  pointer-events: none;
-}
-
-.chart {
+.barchart {
   position: relative;
+  padding-top: 6px;
 }
 
-.chart-line {
-  fill: none;
-  stroke: var(--success);
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  opacity: 0.85;
+.barchart-svg {
+  display: block;
+  width: 100%;
+  /* height comes from the component (plot + baseline caps) */
+}
+
+/* Hairline solid gridlines and baseline — recessive chart chrome */
+.barchart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
-/* Chart legend — quiet swatches under a card header */
-.chart-legend {
-  display: inline-flex;
-  gap: 12px;
-  align-items: center;
-  margin-left: auto;
+.barchart-baseline {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
 }
 
-.chart-legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  color: var(--muted);
+.barchart-bar {
+  transition: opacity var(--t-fast);
+}
+
+.barchart-stub {
+  fill: var(--border);
+}
+
+/* Y tick labels — text tokens, right-aligned into the left pad */
+.barchart-yaxis {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  width: 40px;
+  pointer-events: none;
+}
+
+.barchart-tick {
+  position: absolute;
+  right: 6px;
+  font-size: 10.5px;
   font-weight: 600;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
 }
 
-.chart-legend-swatch {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
+/* X labels — one span per bucket, thinned by the component */
+.barchart-xaxis {
+  display: flex;
+  margin-top: 4px;
 }
 
-.chart-legend-swatch--bar {
-  background: var(--primary);
-  border-radius: 2px 2px 1px 1px;
+.barchart-xlabel {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.chart-legend-swatch--line {
-  height: 3px;
+/* Hover layer — invisible full-column hit targets above the bars.
+   Focus-visible keeps the tooltip reachable from the keyboard. */
+.barchart-hover {
+  position: absolute;
+  top: 6px;
+  left: 4.2%;
+  right: 0;
+  display: flex;
+}
+
+.barchart-hit {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+  padding: 0;
+}
+
+.barchart-hit:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
   border-radius: 2px;
-  background: var(--success);
+}
+
+/* Tooltip — value leads, label follows; text tokens, not series color */
+.barchart-tip {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: var(--surface);
+  border-radius: 6px;
+  padding: 5px 9px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: var(--shadow-2);
+  z-index: 2;
+  animation: tip-in 120ms ease-out;
+}
+
+@keyframes tip-in {
+  from { opacity: 0; transform: translate(-50%, 2px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.barchart-tip-value {
+  font-size: 12.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.barchart-tip-label {
+  font-size: 10.5px;
+  font-weight: 500;
+  opacity: 0.8;
+  line-height: 1.2;
+}
+
+/* Screen-reader twin — visually hidden, machine readable */
+.barchart-table {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* Donut chart */
@@ -1381,10 +1411,57 @@ textarea {
   margin-top: 2px;
 }
 
-/* Compact charts inside the earnings cards */
-.earnings-card .chart {
-  height: 120px;
-  padding-top: 12px;
+/* Compact charts inside the earnings cards — x labels hidden (12
+   months don't fit); the hover tooltip carries the labels instead */
+.earnings-card .barchart-xaxis {
+  display: none;
+}
+
+/* Measure switch tabs — one row above the chart it scopes; selects the
+   measure (orders vs revenue), never paints the chart's series color */
+.measure-tabs {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+  margin-bottom: 12px;
+}
+
+.measure-tab {
+  border: 0;
+  background: transparent;
+  padding: 5px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+
+.measure-tab:hover {
+  color: var(--text);
+}
+
+.measure-tab--active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-1);
+}
+
+/* Admin activity-window tabs — same control, own margin on the page */
+.admin-range-tabs {
+  margin: 4px 0 18px;
+}
+
+/* Refetch dim — switching windows holds the frame at reduced opacity
+   instead of flashing skeletons over live data */
+.admin-page--refetching {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 150ms ease-out;
 }
 
 /* Comp toggle — the "give this free" switch in the Pro grant modal */

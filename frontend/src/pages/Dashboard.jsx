@@ -100,15 +100,46 @@ function SubscriptionCard({ seller, stats }) {
   );
 }
 
-/** Orders chart — shared BarChart with the day's revenue as a line
- * overlay (bars = order count, line = money, both per business day). */
+/** Activity chart — one measure at a time (the measure switch replaces
+ * the old dual-axis bars+line overlay: count and money never share a
+ * plot; they trade places via the tabs above the chart). */
 function OrdersChart({ daily }) {
+  const [measure, setMeasure] = useState("orders");
+  const isMoney = measure === "revenue";
   const data = daily.map((day) => ({
     key: day.date,
-    count: day.count,
-    value: day.value ?? 0,
+    value: isMoney ? day.value ?? 0 : day.count,
   }));
-  return <BarChart data={data} valuePrefix="Tk" />;
+
+  return (
+    <div>
+      <div className="measure-tabs" role="tablist" aria-label="Chart measure">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={!isMoney}
+          className={`measure-tab${!isMoney ? " measure-tab--active" : ""}`}
+          onClick={() => setMeasure("orders")}
+        >
+          Orders
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={isMoney}
+          className={`measure-tab${isMoney ? " measure-tab--active" : ""}`}
+          onClick={() => setMeasure("revenue")}
+        >
+          Revenue
+        </button>
+      </div>
+      <BarChart
+        data={data}
+        measure={isMoney ? "money" : "count"}
+        barColor={isMoney ? "var(--success)" : "var(--primary)"}
+      />
+    </div>
+  );
 }
 
 function StatCard({ icon, label, value, accent, to, title, spark }) {
@@ -343,17 +374,7 @@ export default function Dashboard() {
           {chartDays > 1 && (
             <section className="card">
               <div className="card-header-row">
-                <h3>Orders — {rangeLabel.toLowerCase()}</h3>
-                <span className="chart-legend" aria-hidden="true">
-                  <span className="chart-legend-item">
-                    <span className="chart-legend-swatch chart-legend-swatch--bar" />
-                    orders
-                  </span>
-                  <span className="chart-legend-item">
-                    <span className="chart-legend-swatch chart-legend-swatch--line" />
-                    revenue
-                  </span>
-                </span>
+                <h3>Activity — {rangeLabel.toLowerCase()}</h3>
                 <Link
                   to={ordersLink(range, appliedRange)}
                   className="card-header-link"
