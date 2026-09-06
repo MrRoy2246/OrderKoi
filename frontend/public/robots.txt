@@ -1,0 +1,6 @@
+# OrderKoi — customer-facing pages shouldn't be indexed:
+# /track/ pages expose order status by public code, and sellers share
+# them (and their /order/ form links) in DMs, not search engines.
+User-agent: *
+Allow: /
+Disallow: /track/

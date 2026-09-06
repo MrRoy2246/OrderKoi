@@ -37,7 +37,7 @@ uvicorn app.main:app
 - API base URL: `http://localhost:8000`
 - **Swagger UI (interactive docs):** `http://localhost:8000/docs` ← your main testing tool
 - ReDoc docs: `http://localhost:8000/redoc`
-- Health check: `http://localhost:8000/health`
+- Health check: `http://localhost:8000/health` (liveness) · `http://localhost:8000/ready` (checks the DB too — returns 503 if the DB is down)
 
 > ⚠️ **On this machine, do NOT use `--reload` — it hangs.** Run the plain command above and restart the server manually after every backend edit.
 
@@ -59,35 +59,70 @@ pytest
 
 ## Database
 
-- Dev: SQLite file `orderkoi.db` (auto-created in `backend/`)
+- Dev: SQLite file `orderkoi.db` (auto-created in `backend/`, WAL mode)
 - Delete it to reset all data: `rm orderkoi.db` (or delete in Explorer)
 - ⚠️ `Base.metadata.create_all` does **not** add columns to existing SQLite tables — schema changes to an existing dev DB need a manual `ALTER TABLE` (see `scripts/migrate.py`)
 - Free plan: one-time 15-order allowance, configured via `free_plan_orders` in `app/config.py` (defaults from `.env`)
 - Production: PostgreSQL — switch via `.env` variable (Phase 8b)
+
+## Backups
+
+```bash
+python -m scripts.backup_db        # from backend/ — also run by Task Scheduler daily at 3:07 AM
+```
+
+- Backs up `orderkoi.db` to `backend/backups/orderkoi-YYYYMMDD-HHMMSS.db` (gitignored)
+- Safe to run while the server is up (uses SQLite's backup API, so WAL data is included)
+- Keeps the newest 14 backups, deletes older ones automatically
+- The Windows scheduled task is **"OrderKoi DB backup"** — view it in Task Scheduler or `schtasks /query /tn "OrderKoi DB backup"`
+
+## Email
+
+- All SMTP settings live in `.env` (never commit it). Empty `SMTP_HOST` = emails print to the console instead of sending.
+- Sends happen in **background threads** — the API never waits for Gmail, and a failed send retries 3 times (2s/10s backoff) before logging `EMAIL DELIVERY FAILED`. A total failure never breaks the request.
+- Email templates (welcome/verification, password reset, order received, status change) are in `app/emails.py`.
+
+## Built-in protections (know they exist)
+
+- **Per-IP rate limits** on login/signup/forgot-password/tracking/public form (`app/rate_limit.py`)
+- **Per-account login lockout**: 5 wrong passwords in 15 min → account locked 15 min, even if the attacker switches IPs (`app/login_throttle.py`)
+- **Password reset invalidates old JWTs** — tokens minted before a reset stop working (`sellers.token_invalid_before`)
+- **Honeypot** on the public order form — bots that fill the hidden `website` field get a fake success, nothing is stored
+- **Security headers** on every response (nosniff, frame-deny, referrer, permissions)
+
 
 ## Project layout
 
 ```
 backend/
 ├── app/
-│   ├── main.py        # FastAPI app, routes registration, CORS
+│   ├── main.py        # FastAPI app, routes registration, CORS, security headers, /health + /ready
 │   ├── config.py      # Settings from .env (incl. free_plan_orders = 15)
-│   ├── database.py    # DB engine & session
-│   ├── email.py       # SMTP (starttls) with console fallback
-│   ├── models.py      # SQLAlchemy models (Seller, Order, UpgradeRequest, SubscriptionEvent)
+│   ├── database.py    # DB engine & session (SQLite WAL mode)
+│   ├── email.py       # SMTP send — background threads + retry, console fallback
+│   ├── emails.py      # Email templates (welcome/verify, reset, order received, status change)
+│   ├── login_throttle.py  # Per-account lockout after repeated failed logins
+│   ├── rate_limit.py  # Per-IP sliding-window rate limits
+│   ├── models.py      # SQLAlchemy models (Seller, Order, UpgradeRequest, SubscriptionEvent, tokens)
 │   ├── schemas.py     # Pydantic request/response schemas
-│   ├── security.py    # Password hashing, JWT create/verify
+│   ├── security.py    # Password hashing, JWT create/verify (incl. iat + token_invalid_before)
+│   ├── deps.py        # Shared dependencies — get_db, get_current_seller (JWT + revocation check)
 │   ├── utils.py       # Timezone helpers (Asia/Dhaka business time)
 │   └── routes/
-│       ├── auth.py    # /auth/* — signup, login, me, password reset, subscription-history, cancel-subscription
+│       ├── auth.py    # /auth/* — signup, login, me, email verify/resend, password reset, subscription-history, cancel-subscription
 │       ├── orders.py  # /orders CRUD + status changes + /orders/stats/summary (free-allowance gate)
 │       ├── tracking.py# /track/{code} — public
 │       ├── admin.py   # /admin/* — stats, sellers, upgrade requests, subscription events
-│       └── public.py  # /public/stores/{slug} — order form + is_accepting_orders
+│       └── public.py  # /public/stores/{slug} — order form + is_accepting_orders (honeypot)
 ├── scripts/
 │   ├── seed_admin.py  # Bootstrap an admin account
-│   └── migrate.py     # Manual SQLite schema migrations (ALTER TABLE)
-├── tests/             # pytest suite (147 tests)
+│   ├── make_admin.py  # Promote an existing seller to admin
+│   ├── migrate.py     # Manual SQLite schema migrations (ALTER TABLE)
+│   ├── backup_db.py   # Timestamped DB backup (keep 14) — runs daily via Task Scheduler
+│   ├── audit_probe.py # Manual audit helpers
+│   └── bench_stats.py # Performance checks for the stats endpoints
+├── backups/           # Backup output (gitignored)
+├── tests/             # pytest suite (177 tests)
 ├── requirements.txt
 ├── .env.example       # Template for secrets — copy to .env
 └── venv/              # Virtual environment (never commit)

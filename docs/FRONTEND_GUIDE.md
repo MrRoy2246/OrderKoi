@@ -34,6 +34,7 @@ npm run dev
 |---|---|---|
 | `/` | Landing page | Everyone |
 | `/login`, `/signup`, `/forgot-password`, `/reset-password` | Auth | Sellers |
+| `/verify-email` | Opens from the verification email link | Sellers (via email) |
 | `/dashboard` | Overview: stats, charts, subscription card | Sellers (login required) |
 | `/dashboard/orders`, `/dashboard/orders/:id` | Order list + detail | Sellers (login required) |
 | `/dashboard/settings` | Store settings + Plan & subscription (history) | Sellers (login required) |
@@ -41,6 +42,8 @@ npm run dev
 | `/admin/sellers`, `/admin/sellers/:id`, `/admin/requests` | Seller & plan management, upgrade queue | Admin only |
 | `/order/:slug` | **Public order form** (paused page when free limit hit) | Customers — no login |
 | `/track/:code` | **Public tracking page** | Customers — no login |
+| `/privacy`, `/terms` | Privacy Policy & Terms of Service | Everyone |
+| anything else | 404 page | Everyone |
 
 ## Production build
 
@@ -50,6 +53,19 @@ npm run preview   # serves the build locally to verify it
 ```
 
 The `dist/` folder is what gets deployed to your domain (Phase 8).
+
+## E2E smoke tests (Playwright)
+
+Five end-to-end tests cover the critical paths: landing renders, 404 page, signup check-your-email screen, login → dashboard, and public order form → confirmation → tracking.
+
+```bash
+# Both dev servers must be running first (backend 8000, frontend 5173)
+npx playwright test
+```
+
+- Runs one test at a time (`workers: 1`) — the dev backend rate-limits by IP, and parallel tests would trip it
+- Uses the long-lived dev seller account (`test@gmail.com`) — no email-verification round trip needed
+- First run only: `npx playwright install chromium`
 
 ## Testing it yourself
 
@@ -65,16 +81,21 @@ The `dist/` folder is what gets deployed to your domain (Phase 8).
 frontend/
 ├── src/
 │   ├── main.jsx           # App bootstrap
-│   ├── App.jsx            # Router setup
+│   ├── App.jsx            # Router setup (incl. 404 catch-all, /privacy, /terms)
 │   ├── index.css          # Design system + all component styles (tokens: koi vermilion on warm paper)
 │   ├── api/client.js      # API wrapper → talks to backend
-│   ├── auth/AuthContext.jsx  # Token storage, login state
-│   ├── pages/             # One file per page (dashboard, orders, settings, admin/*, public form, tracking)
+│   ├── auth/AuthContext.jsx  # Token storage, login state (signup does NOT auto-login — email must be verified first)
+│   ├── pages/             # One file per page (dashboard, orders, settings, admin/*, public form, tracking, verify-email, legal, 404)
 │   ├── components/        # Reusable UI (badges, meters, modals, charts, skeletons)
 │   └── utils/             # Date/business-time, order formatting, hooks
+├── e2e/                   # Playwright smoke tests (smoke.spec.js)
+├── scripts/
+│   └── generate-assets.mjs  # Regenerates favicon.ico / apple-touch-icon / og-image from the SVG logo
+├── public/                # Static files served as-is: favicon, apple-touch-icon, og-image, robots.txt
 ├── package.json           # lint (oxlint) + build scripts
+├── playwright.config.js   # E2E config (workers: 1 — dev backend rate-limits by IP)
 ├── vite.config.js         # Dev proxy → backend
-└── index.html
+└── index.html             # Meta tags: SEO description, Open Graph (share card), icons
 ```
 
 ## Troubleshooting

@@ -1,6 +1,6 @@
 # OrderKoi — Project Status
 
-_Last updated: 2026-09-05_
+_Last updated: 2026-09-06_
 
 ## ✅ Completed
 
@@ -68,10 +68,11 @@ _Last updated: 2026-09-05_
 - [x] Real bKash number in `frontend/src/components/PlanSection.jsx` — 01736060259 (Personal), done 2026-09-06
 - [x] Legal & trust pages — Privacy Policy, Terms of Service, contact email (landing footer) — done 2026-09-06 (`/privacy`, `/terms`)
 - [x] 404 page — done 2026-09-06 (`NotFound.jsx`)
-- [ ] Favicon fallbacks (`favicon.ico`, `apple-touch-icon.png`) + delete unused `public/icons.svg`
-- [ ] `og:image` social share card + `robots.txt`
-- [ ] Error tracking (Sentry free tier) + frontend smoke test (Playwright: login → create order → track)
-- [ ] Session security revisit (token expiry / server-side invalidation)
+- [x] Favicon fallbacks (`favicon.ico`, `apple-touch-icon.png`) + delete unused `public/icons.svg` — done 2026-09-06 (regenerable via `frontend/scripts/generate-assets.mjs`; also removed unused `src/assets/hero.png` + `vite.svg`)
+- [x] `og:image` social share card + `robots.txt` — done 2026-09-06 (`public/og-image.png` 1200×630 with brand font; robots.txt disallows `/track/`; og:image URL must be made absolute at deploy)
+- [x] Error tracking → Sentry still open; frontend smoke test done 2026-09-06 (Playwright E2E, 5 tests)
+- [x] Session security revisit — server-side invalidation done 2026-09-06 (password reset invalidates pre-reset JWTs via `sellers.token_invalid_before`)
+- [x] DB backups (SQLite era) — done 2026-09-06: `backend/scripts/backup_db.py` (daily 3:07 AM via Windows Task Scheduler "OrderKoi DB backup", keeps 14, WAL-safe)
 
 ## 🟡 Product roadmap (post-launch)
 

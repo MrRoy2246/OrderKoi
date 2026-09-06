@@ -14,6 +14,7 @@ venv/
 *.db
 *.db-shm
 *.db-wal
+backend/backups/
 
 # --- Node / frontend ---
 node_modules/
