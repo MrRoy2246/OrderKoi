@@ -45,6 +45,8 @@ const AUTH_RESULT_PATHS = [
   "/auth/signup",
   "/auth/forgot-password",
   "/auth/reset-password",
+  "/auth/verify-email",
+  "/auth/resend-verification",
 ];
 
 function isAuthResultPath(path) {
@@ -182,6 +184,16 @@ export const api = {
       request("/auth/reset-password", {
         method: "POST",
         body: JSON.stringify({ token, new_password: newPassword }),
+      }),
+    // Consumes the token from the signup email's verification link
+    verifyEmail: (token) =>
+      request(`/auth/verify-email?token=${encodeURIComponent(token)}`),
+    // Sends a fresh verification link (anti-enumeration: same response
+    // whether or not the account exists)
+    resendVerification: (email) =>
+      request("/auth/resend-verification", {
+        method: "POST",
+        body: JSON.stringify({ email }),
       }),
     upgradeRequests: () => request("/auth/upgrade-requests"),
     // My subscription events — activations, renewals, cancellations

@@ -123,6 +123,22 @@ function NewestSellers({ sellers, loading, error, onRetry }) {
   );
 }
 
+/** Two-row KPI hint: the window-scoped figure on top, the all-time
+ * total as a separated label→value footer row. Two scopes should never
+ * share one run-on line — the split keeps "what this period did" from
+ * reading as the same number as the lifetime figure. */
+function KpiHint({ period, allTime }) {
+  return (
+    <>
+      <span className="kpi-hint-period">{period}</span>
+      <span className="kpi-hint-row">
+        <span className="kpi-hint-row-label">All time</span>
+        <span className="kpi-hint-row-value">{allTime}</span>
+      </span>
+    </>
+  );
+}
+
 /** Platform-owner view: the whole OrderKoi business at a glance. */
 export default function AdminOverview() {
   // ---- Global date filter (the only dimension the stats API scopes) ----
@@ -305,8 +321,13 @@ export default function AdminOverview() {
   // Window sums — the chart meta must carry what's PLOTTED in the
   // selected range, not the all-time totals
   const revenueInWindow = monthly.reduce((sum, m) => sum + m.value, 0);
+  const ordersInMoneySeries = monthly.reduce((sum, m) => sum + m.count, 0);
   const subsInWindow = stats.subscription_monthly.reduce(
     (sum, m) => sum + m.value,
+    0
+  );
+  const paymentsInWindow = stats.subscription_monthly.reduce(
+    (sum, m) => sum + m.count,
     0
   );
   const filterLabel = rangeLabel(range, custom);
@@ -357,7 +378,16 @@ export default function AdminOverview() {
           icon="creditCard"
           label={`Your earnings · ${windowLabel}`}
           value={formatTk(subsInWindow)}
-          hint={`All-time: ${formatTk(stats.subscription_revenue_total)}`}
+          hint={
+            <KpiHint
+              period={
+                paymentsInWindow > 0
+                  ? `${paymentsInWindow} payment${paymentsInWindow === 1 ? "" : "s"} in this period`
+                  : "No payments in this period"
+              }
+              allTime={formatTk(stats.subscription_revenue_total)}
+            />
+          }
           accent="orange"
           to="/admin/requests"
           title="See the subscription ledger"
@@ -366,7 +396,12 @@ export default function AdminOverview() {
           icon="banknote"
           label={`Seller revenue · ${windowLabel}`}
           value={formatTk(revenueInWindow)}
-          hint={`All-time: ${formatTk(stats.platform_revenue)} · this month: ${formatTk(stats.gmv_this_month)}`}
+          hint={
+            <KpiHint
+              period={`${ordersInMoneySeries.toLocaleString()} order${ordersInMoneySeries === 1 ? "" : "s"} in this period`}
+              allTime={formatTk(stats.platform_revenue)}
+            />
+          }
           accent="green"
           to="/admin/sellers"
           title="See sellers and their order value"
@@ -416,14 +451,13 @@ export default function AdminOverview() {
       </section>
 
       {/* Revenue analytics — the two kinds of money, side by side.
-          The monthly series follows the global date filter when an
-          explicit range is set; on rolling presets it stays the
-          trailing 12 months (the money views' default). */}
+          Both series follow the global date filter with adaptive
+          granularity (daily for <= 90-day windows, monthly otherwise). */}
       <div className="admin-chart-grid admin-chart-grid--revenue">
         <ChartCard
           title="Platform revenue"
           meta={`${formatTk(subsInWindow)} in ${chartScope}`}
-          footer={`All-time: ${formatTk(stats.subscription_revenue_total)} · from ${stats.pro_sellers} active Pro seller${stats.pro_sellers === 1 ? "" : "s"} · comp grants excluded`}
+          footer={`From ${stats.pro_sellers} active Pro seller${stats.pro_sellers === 1 ? "" : "s"} · all-time ${formatTk(stats.subscription_revenue_total)} · comp grants excluded`}
         >
           <BarChart
             data={stats.subscription_monthly.map((m) => ({ key: bucketKey(m), value: m.value }))}

@@ -32,6 +32,18 @@ def test_window_expires(monkeypatch):
     assert limiter.allow("ip-1") is True
 
 
+def test_resend_verification_has_a_rule():
+    """Resend burns real SMTP quota per request — it needs its own
+    guard like forgot-password, not the global default."""
+    from app.rate_limit import RULES
+
+    rule = next(r for r in RULES if r[0] == "/auth/resend-verification")
+    _, method, limit, window = rule
+    assert method in (None, "POST")  # None = any method — fine for a POST-only route
+    assert limit <= 10
+    assert window <= 300
+
+
 def test_public_submission_limit_is_tight_and_post_scoped():
     """Form submissions burn the seller's free-plan quota, so they get
     a tight per-IP limit — but only POSTs. Loading the form (GET) must

@@ -29,11 +29,6 @@ export function KpiCard({ icon, label, value, hint, accent, to, title, spark, sp
         )}
       </div>
       {hint && <p className="kpi-hint">{hint}</p>}
-      {to && (
-        <span className="kpi-go" aria-hidden="true">
-          <Icon name="arrowRight" size={15} />
-        </span>
-      )}
     </>
   );
 

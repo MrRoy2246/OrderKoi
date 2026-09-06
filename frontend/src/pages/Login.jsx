@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
-import { getErrorMessage } from "../api/client";
+import { api, getErrorMessage } from "../api/client";
 import Icon from "../components/icons";
 import Logo from "../components/Logo";
 
@@ -14,11 +14,17 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
+  // Set when the account exists but the email isn't verified yet —
+  // shows the resend option instead of a bare error
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [resendNote, setResendNote] = useState(null);
+  const [resending, setResending] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(event) {
     event.preventDefault();
     setError(null);
+    setNeedsVerification(false);
 
     if (!email || !password) {
       setError("Please enter your email and password.");
@@ -31,9 +37,26 @@ export default function Login() {
       // Platform admins land in the admin panel, sellers in their store
       navigate(me.role === "admin" ? "/admin" : "/dashboard", { replace: true });
     } catch (err) {
-      setError(getErrorMessage(err, "Login failed. Is the backend running?"));
+      const message = getErrorMessage(err, "Login failed. Is the backend running?");
+      if (err?.status === 403 && message.toLowerCase().includes("verify")) {
+        setNeedsVerification(true);
+      }
+      setError(message);
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleResend() {
+    setResending(true);
+    setResendNote(null);
+    try {
+      await api.auth.resendVerification(email.trim());
+      setResendNote("If an unverified account exists with this email, a new link is on its way.");
+    } catch (err) {
+      setResendNote(getErrorMessage(err, "Could not resend the email. Please try again."));
+    } finally {
+      setResending(false);
     }
   }
 
@@ -57,6 +80,25 @@ export default function Login() {
         {error && (
           <div className="alert alert--error" role="alert">
             {error}
+          </div>
+        )}
+
+        {needsVerification && (
+          <div className="verify-resend">
+            <button
+              type="button"
+              className="button button--outline button--full"
+              onClick={handleResend}
+              disabled={resending || !email.trim()}
+              title="Send a fresh verification link to your email"
+            >
+              {resending ? "Sending…" : "Resend verification email"}
+            </button>
+            {resendNote && (
+              <p className="muted-note" role="status">
+                {resendNote}
+              </p>
+            )}
           </div>
         )}
 

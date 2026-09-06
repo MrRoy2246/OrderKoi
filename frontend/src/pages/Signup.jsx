@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { getErrorMessage } from "../api/client";
 import Icon from "../components/icons";
@@ -15,11 +15,14 @@ const INITIAL_FORM = {
 
 export default function Signup() {
   const { signup } = useAuth();
-  const navigate = useNavigate();
 
   const [form, setForm] = useState(INITIAL_FORM);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  // Set after a successful signup — the account needs email
+  // verification before login works, so we land on a note instead of
+  // routing into the dashboard
+  const [verifyPending, setVerifyPending] = useState(null);
 
   function updateField(name, value) {
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -47,13 +50,13 @@ export default function Signup() {
     setError(null);
     setSubmitting(true);
     try {
-      const me = await signup({
+      await signup({
         store_name: form.store_name.trim(),
         email: form.email.trim(),
         phone: form.phone.trim() || null,
         password: form.password,
       });
-      navigate(me.role === "admin" ? "/admin" : "/dashboard", { replace: true });
+      setVerifyPending(form.email.trim());
     } catch (err) {
       setError(getErrorMessage(err, "Signup failed. Is the backend running?"));
     } finally {
@@ -68,17 +71,47 @@ export default function Signup() {
           <span className="auth-logo">
             <Logo size={38} />
           </span>
-          <h1>Create your store</h1>
-          <p>Start tracking orders in 30 seconds</p>
+          {verifyPending ? (
+            <>
+              <h1>Check your email</h1>
+              <p>
+                We sent a verification link to <strong>{verifyPending}</strong>.
+                Click it to activate your account, then log in.
+              </p>
+            </>
+          ) : (
+            <>
+              <h1>Create your store</h1>
+              <p>Start tracking orders in 30 seconds</p>
+            </>
+          )}
         </div>
 
-        {error && (
-          <div className="alert alert--error" role="alert">
-            {error}
-          </div>
-        )}
+        {verifyPending ? (
+          <>
+            <div className="alert alert--success" role="status">
+              Your store is ready — one last step: verify your email address
+              so you can log in and start taking orders.
+            </div>
+            <Link to="/login" className="button button--primary button--full">
+              Go to login
+            </Link>
+            <p className="auth-back">
+              <Link to="/">
+                <Icon name="chevronLeft" size={14} />
+                Back to home
+              </Link>
+            </p>
+          </>
+        ) : (
+          <>
+            {error && (
+              <div className="alert alert--error" role="alert">
+                {error}
+              </div>
+            )}
 
-        <form onSubmit={handleSubmit} noValidate>
+            <form onSubmit={handleSubmit} noValidate>
           <div className="field">
             <label htmlFor="store_name">Store name</label>
             <input
@@ -155,6 +188,8 @@ export default function Signup() {
             Back to home
           </Link>
         </p>
+          </>
+        )}
       </div>
     </div>
   );

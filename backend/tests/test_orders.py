@@ -1,5 +1,7 @@
 """Orders API tests: CRUD, workflow, ownership, validation."""
 
+import pytest
+
 
 def create_order(client, headers, **overrides):
     payload = {
@@ -256,6 +258,8 @@ def test_delete_rejected_after_progress(client, auth_headers, order):
 
 def test_ownership_isolation(client, auth_headers, order):
     # A second seller must not see, edit, or advance the first seller's order
+    from conftest import verify_account
+
     client.post(
         "/auth/signup",
         json={
@@ -264,6 +268,7 @@ def test_ownership_isolation(client, auth_headers, order):
             "store_name": "Intruder Store",
         },
     )
+    verify_account("intruder@example.com")
     login = client.post(
         "/auth/login", json={"email": "intruder@example.com", "password": "intruderpass1"}
     )
@@ -422,6 +427,8 @@ def test_export_respects_status_filter(client, auth_headers):
 
 def test_export_is_seller_isolated(client, auth_headers, order):
     """A second seller's export must not contain the first seller's orders."""
+    from conftest import verify_account
+
     client.post(
         "/auth/signup",
         json={
@@ -430,6 +437,7 @@ def test_export_is_seller_isolated(client, auth_headers, order):
             "store_name": "Export Intruder",
         },
     )
+    verify_account("exportintruder@example.com")
     login = client.post(
         "/auth/login", json={"email": "exportintruder@example.com", "password": "intruderpass1"}
     )
@@ -487,3 +495,60 @@ def test_business_timezone_day_boundary(client, auth_headers, order):
         headers=auth_headers,
     ).json()
     assert yesterday["total_orders"] == 0
+
+
+# ---------- Customer status-change emails (the killer feature) ----------
+
+@pytest.fixture
+def captured_order_email(monkeypatch):
+    """Capture emails sent from the orders routes instead of sending."""
+    sent = []
+
+    def fake_send(to, subject, body):
+        sent.append({"to": to, "subject": subject, "body": body})
+
+    monkeypatch.setattr("app.routes.orders.send_email", fake_send)
+    return sent
+
+
+def test_status_change_emails_customer(client, auth_headers, order_payload, captured_order_email):
+    payload = {**order_payload, "customer_email": "rahim.uddin@example.com"}
+    order = client.post("/orders", json=payload, headers=auth_headers).json()
+
+    response = client.patch(
+        f"/orders/{order['id']}/status", json={"status": "confirmed"}, headers=auth_headers
+    )
+    assert response.status_code == 200
+
+    assert len(captured_order_email) == 1
+    email = captured_order_email[0]
+    assert email["to"] == "rahim.uddin@example.com"
+    assert "confirmed" in email["subject"]
+    assert f"#{order['order_number']}" in email["subject"]
+    # The customer gets the tracking link, never a login-protected URL
+    assert f"/track/{order['tracking_code']}" in email["body"]
+
+
+def test_status_change_without_customer_email_sends_nothing(
+    client, auth_headers, order, captured_order_email
+):
+    """Dashboard orders can omit the customer email — no address, no email."""
+    response = client.patch(
+        f"/orders/{order['id']}/status", json={"status": "confirmed"}, headers=auth_headers
+    )
+    assert response.status_code == 200
+    assert len(captured_order_email) == 0
+
+
+def test_email_failure_never_blocks_status_change(client, auth_headers, order, monkeypatch):
+    """A broken mail server must not cost the seller their status update."""
+    def exploding_send(to, subject, body):
+        raise RuntimeError("SMTP is down")
+
+    monkeypatch.setattr("app.routes.orders.send_email", exploding_send)
+
+    response = client.patch(
+        f"/orders/{order['id']}/status", json={"status": "confirmed"}, headers=auth_headers
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "confirmed"

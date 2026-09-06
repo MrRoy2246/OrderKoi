@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:5173"
     reset_token_expire_minutes: int = 30
 
+    # Email verification — how long the signup verify link is valid
+    email_verification_expire_minutes: int = 60 * 24
+
     # Email (SMTP). Empty host = development "console" backend:
     # emails are printed to the server log instead of being sent.
     smtp_host: str = ""

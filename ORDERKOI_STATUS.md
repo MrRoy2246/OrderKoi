@@ -13,13 +13,13 @@ _Last updated: 2026-09-05_
 | **Phase 4 — Seller Dashboard**                    | Orders list (search, filter, pagination), order detail, status changes, create-order modal                                                                                                                                                                                                                                          |
 | **Phase 5 — Public Tracking Page**                | `/track/:code` — customer-facing status page, no login                                                                                                                                                                                                                                                                              |
 | **Phase 6 — Analytics & Store Settings**          | Dashboard stats, daily chart, status breakdown, store settings                                                                                                                                                                                                                                                                      |
-| **Phase 7 — Testing & Hardening**                 | Test suite (147/147 passing), rate limiting, security review                                                                                                                                                                                                                                                                        |
+| **Phase 7 — Testing & Hardening**                 | Test suite, rate limiting, security review (now 165/165 passing)                                                                                                                                                                                                                                                                    |
 | **Phase 7.5 — Admin Panel & Plans**               | Admin overview, sellers & plans management, upgrade requests                                                                                                                                                                                                                                                                        |
 | **Phase 7.6 — Admin as pure platform account**    | Admin has no shop; separate admin panel                                                                                                                                                                                                                                                                                             |
 | **Phase 7.7 — Forgot / Reset Password**           | Email reset links, 30-min tokens                                                                                                                                                                                                                                                                                                    |
 | **Phase 7.8 — Public Order Form**                 | `/order/:slug` — customers submit orders without login; store shows a paused page up front when the free allowance is exhausted                                                                                                                                                                                                     |
 | **Phase 7.9 — Dashboard polish**                  | Date ranges (today/7d/30d/all/custom), clickable stat cards                                                                                                                                                                                                                                                                         |
-| **Phase 7.10 — Pro durations & upgrade workflow** | 1/6/12-month Pro options, bKash/Nagad payment instructions, request → approve/reject flow, subscription ledger, admin duration-grant modal, granted-until snapshots on past requests, unified store-history modal                                                                                                                    |
+| **Phase 7.10 — Pro durations & upgrade workflow** | 1/6/12-month Pro options, bKash payment instructions, request → approve/reject flow, subscription ledger, admin duration-grant modal, granted-until snapshots on past requests, unified store-history modal                                                                                                                    |
 | **Audit remediation**                             | 9/10 issues fixed, 1 skipped by decision (seller order-editing); timezone-correct stats (Asia/Dhaka), CSV export, POST-scoped rate limits                                                                                                                                                                                           |
 | **Frontend redesign (A–F)**                       | New design system "Koi vermilion on warm paper" — tokens, Manrope font, SVG icon set, koi logo/favicon, shared badge/timeline/skeleton/empty-state components, sidebar + mobile drawer, mobile order cards, redesigned all 14 pages, landing page with product mock, full CSS rewrite, a11y + reduced-motion, responsive 320px→wide |
 | **Production-readiness review (2026-09-02)**      | Full backend + frontend audit for real-life readiness — findings and the agreed roadmap are below. Git initialized (`.gitignore` + first commit) protecting `.env`/DB/node_modules.                                                                                                                                                  |
@@ -27,19 +27,22 @@ _Last updated: 2026-09-05_
 | **Allowance meter + unified subscription card (2026-09-05)** | Free meter and Pro days-left meter share ONE footer-strip style in the subscription card (single line: label · bar · trailing slot); compact variant on the Orders page; Pro bar turns red inside the final week before expiry. |
 | **Seller subscription history (2026-09-05)**      | `GET /auth/subscription-history` — the seller sees their own ledger in Settings (date + time). `SubscriptionEvent.request_id` links events to the approved request that caused them, so "Approved" + "Pro activated" collapse into ONE history row; admin approval stamps it. |
 | **Admin overview KPI scoping (2026-09-05)**       | All six admin KPI cards now follow the global date filter — window-scoped figures summed from the same series the charts plot; all-time context lives in the hint line. |
+| **Full email system (2026-09-06)**                | Every account/email-touching event now sends real mail via `app/emails.py` templates + SMTP from `backend/.env`: signup welcome+verification (single-use 24h token, login blocked until verified, resend endpoint w/ anti-enumeration), password reset (already existed), customer "order received" on public form submission, and customer status-change emails on every dashboard status advance. Existing accounts backfilled `email_verified=1`. Switching senders = edit `.env` only. |
+| **Pre-deploy hardening batch (2026-09-06)**       | Audit remediations that don't need Postgres/Docker: SMTP sends moved to background threads with retry+backoff (API responses no longer wait on Gmail); password reset now invalidates pre-reset JWTs (`sellers.token_invalid_before` + `iat` claim — `scripts/migrate.py` adds the column); per-account login lockout (5 fails / 15 min → 15 min lock, `app/login_throttle.py`, IP-rotation-proof); security headers middleware (nosniff/DENY/referrer/permissions); `/ready` DB-touching readiness probe; public-form honeypot (bots get fake 201, nothing stored); frontend 404 page; Privacy Policy + Terms pages (linked from landing footer); strong 64-hex dev `SECRET_KEY`; Playwright E2E smoke (5 tests: landing, 404, signup screen, login→dashboard, public order→tracking). Backend 177/177. |
 
-**Current state:** fully working product on dev servers. Backend tests 147/147. Frontend build + lint clean. Pushed to GitHub (`MrRoy2246/OrderKoi`, branch `main`).
+**Current state:** fully working product on dev servers. Backend tests 177/177. Playwright E2E smoke 5/5 (`frontend/e2e/smoke.spec.js` — dev servers must be running: `npx playwright test`). Frontend build + lint clean. Gmail SMTP live (app password in `backend/.env`, sends are background now).
 
-**Agreed launch order (decided 2026-09-02):** ① real SMTP with personal email + test everything → ② shift to PostgreSQL → ③ if all OK, Dockerize + deploy.
+**Agreed launch order (revised 2026-09-06 after the production-readiness audit):** ① pre-deploy code fixes (DONE — see hardening batch above) → ② shift to PostgreSQL (in a few days) → ③ Dockerize + deploy after ① and ② are verified.
 
 ---
 
-## 🔴 Phase 8a — Real SMTP email (next session, start here)
+## 🔴 Phase 8a — Real SMTP email (in progress)
 
-- [ ] Get SMTP credentials for a personal email (Gmail app-password is the usual route; Brevo/Resend also work) and put them in `backend/.env` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `EMAIL_FROM`) — the code path already exists in `app/email.py` (starttls + login, console fallback when host is empty)
-- [ ] Test password-reset email end-to-end (request link → receive email → reset works)
-- [ ] Test Pro approval/rejection emails and new-form-order notification emails
-- [ ] Confirm emails don't slow down requests noticeably (they're sent inline today — if slow, move to a background thread/task later)
+- [x] `backend/.env` + `backend/.env.example` — all SMTP credentials live in env (Gmail: `smtp.gmail.com:587` STARTTLS, app password; empty `SMTP_HOST` = console backend). Switching senders = edit `.env`/compose env only.
+- [x] Signup sends welcome + verification email (combined); `EmailVerificationToken` model (SHA-256 hashed, single-use, 24h); `GET /auth/verify-email?token=…` activates; login 403-blocked until verified; `POST /auth/resend-verification` (anti-enumeration, rate-limited); existing accounts backfilled verified. Frontend: `/verify-email` page, Signup "check your email" state, Login resend button.
+- [x] Customer emails: "order received" on public form submission + status-change email on every dashboard status advance (skipped silently when order has no customer email; failures never break the API).
+- [x] Backend tests 165/165 incl. 18 new email tests (`test_email_verification.py` + additions).
+- [x] ~~**← waiting on user:** Gmail app password~~ DONE 2026-09-06 — live SMTP verified end-to-end (signup+verify, login gate, resend, order emails).
 
 ## 🔴 Phase 8b — PostgreSQL shift
 
@@ -62,9 +65,9 @@ _Last updated: 2026-09-05_
 
 ## 🟠 Before/just after launch
 
-- [ ] Real bKash/Nagad numbers in `frontend/src/components/PlanSection.jsx` — _owner task_
-- [ ] Legal & trust pages — Privacy Policy, Terms of Service, contact email (landing footer + tracking pages)
-- [ ] 404 page (unknown URLs currently redirect to landing)
+- [x] Real bKash number in `frontend/src/components/PlanSection.jsx` — 01736060259 (Personal), done 2026-09-06
+- [x] Legal & trust pages — Privacy Policy, Terms of Service, contact email (landing footer) — done 2026-09-06 (`/privacy`, `/terms`)
+- [x] 404 page — done 2026-09-06 (`NotFound.jsx`)
 - [ ] Favicon fallbacks (`favicon.ico`, `apple-touch-icon.png`) + delete unused `public/icons.svg`
 - [ ] `og:image` social share card + `robots.txt`
 - [ ] Error tracking (Sentry free tier) + frontend smoke test (Playwright: login → create order → track)
@@ -72,9 +75,7 @@ _Last updated: 2026-09-05_
 
 ## 🟡 Product roadmap (post-launch)
 
-- [ ] Customer notifications on status change (email/SMS) — the core "order koi?" killer feature
 - [ ] Tracking page auto-refresh / polling
-- [ ] Email verification at signup
 - [ ] Admin seller drill-down (view one seller's orders)
 - [ ] Help / FAQ page + WhatsApp support link
 - [ ] Bengali localization
@@ -87,7 +88,7 @@ _Last updated: 2026-09-05_
 
 ## 📋 Production-readiness review (2026-09-02) — what the audit found
 
-**Already real-project quality:** SECRET_KEY boot validation in production; per-IP sliding-window rate limits on login/signup/forgot-password/tracking/public-form; generic 500s (no stack traces leak); `/health` endpoint; Pydantic validation on every input; tracking page hides addresses/phones; admin routes 403 (not discoverable); 126 tests; WAL mode; email failures never crash requests; `seed_admin.py` exists.
+**Already real-project quality:** SECRET_KEY boot validation in production; per-IP sliding-window rate limits on login/signup/forgot-password/tracking/public-form; generic 500s (no stack traces leak); `/health` endpoint; Pydantic validation on every input; tracking page hides addresses/phones; admin routes 403 (not discoverable); 165 tests; WAL mode; email failures never crash requests; `seed_admin.py` exists.
 
 **Gaps (each addressed by a Phase 8 step above):** no Docker files; frontend API URL baked at build time (needs Docker build arg); `FRONTEND_URL` in email links must point at the real domain; CORS defaults to localhost; no production WSGI server or Postgres driver in requirements; SMTP console-only until Phase 8a; in-memory rate limiter assumes a single worker; no backups; no migrations tool; no TLS termination (→ Caddy).
 

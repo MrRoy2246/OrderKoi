@@ -53,7 +53,7 @@ function StoreAvatar({ storeName }) {
 /**
  * The admin's money desk. Pending requests come first — each card shows
  * exactly what to verify (duration, the amount the seller should have
- * paid, the transaction ID) so checking against the bKash/Nagad
+ * paid, the transaction ID) so checking against the bKash
  * statement is a glance, not a hunt. Below, one calm row per store:
  * click it and a modal tells the shop's complete story — its upgrade
  * requests (approved, rejected, pending) and its full plan timeline.
@@ -161,7 +161,7 @@ export default function AdminRequests() {
         <h1>Upgrade Requests</h1>
         <p>
           {pending.length > 0
-            ? `${pending.length} waiting · ${formatTk(expectedTotal)} expected — verify each payment against your bKash/Nagad statement, then approve.`
+            ? `${pending.length} waiting · ${formatTk(expectedTotal)} expected — verify each payment against your bKash statement, then approve.`
             : "Sellers who paid and want Pro. New requests appear here the moment a seller submits one."}
         </p>
       </header>

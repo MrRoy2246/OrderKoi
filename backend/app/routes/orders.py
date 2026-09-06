@@ -20,6 +20,8 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import get_db
 from app.deps import get_current_seller
+from app.email import send_email
+from app.emails import status_changed
 from app.models import Order, OrderStatus, Seller, VALID_TRANSITIONS, pro_plan_active, utcnow
 from app.schemas import (
     DailyValue,
@@ -566,7 +568,39 @@ def update_order_status(
 
     db.commit()
     db.refresh(order)
+
+    _notify_customer_of_status(seller, order, new_status)
+
     return order
+
+
+def _notify_customer_of_status(seller: Seller, order: Order, new_status: str) -> None:
+    """Email the customer that their order moved to a new status.
+
+    Only dashboard-created orders can lack a customer email (the public
+    form requires one) — when it's absent, no email. Same contract as
+    every other notification: never raises, never blocks the API
+    response the seller is waiting on.
+    """
+    if not order.customer_email:
+        return
+    try:
+        tracking_url = f"{settings.frontend_url}/track/{order.tracking_code}"
+        subject, body = status_changed(
+            store_name=seller.store_name,
+            customer_name=order.customer_name,
+            order_number=order.order_number,
+            new_status=new_status,
+            tracking_url=tracking_url,
+        )
+        send_email(to=order.customer_email, subject=subject, body=body)
+    except Exception:  # noqa: BLE001 — logged, never propagated
+        import logging
+
+        logging.getLogger("orderkoi").exception(
+            "Failed to notify customer about order #%s status change",
+            order.order_number,
+        )
 
 
 @router.delete(

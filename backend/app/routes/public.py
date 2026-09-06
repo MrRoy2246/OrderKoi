@@ -11,6 +11,8 @@ dashboard before confirming the order. The seller is notified by
 email, and the customer gets a tracking code right away.
 """
 
+import random
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -18,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import get_db
 from app.email import send_email
+from app.emails import order_received
 from app.models import Order, OrderStatus, Seller, pro_plan_active
 from app.routes.orders import (
     _compute_total,
@@ -83,6 +86,19 @@ def submit_order(
     db: Session = Depends(get_db),
 ) -> PublicOrderCreated:
     seller = _get_store(slug, db)
+
+    # Honeypot tripped: the real form hides this field off-screen, so a
+    # non-empty value means a bot. Answer with a plausible-looking
+    # success (201, right shape) but create nothing — no order, no
+    # emails, no quota burned. Rejecting loudly would just teach the
+    # bot operator to drop the field.
+    if payload.website:
+        return PublicOrderCreated(
+            order_number=random.randint(100, 9999),
+            tracking_code=_generate_tracking_code(),
+            store_name=seller.store_name,
+        )
+
     _check_plan_limit(seller, db)
 
     items = [item.model_dump() for item in payload.items]
@@ -115,6 +131,7 @@ def submit_order(
     order = _insert_order_with_retry(db, build)
 
     _notify_seller(seller, order)
+    _notify_customer(seller, order)
 
     return PublicOrderCreated(
         order_number=order.order_number,
@@ -158,4 +175,31 @@ def _notify_seller(seller: Seller, order: Order) -> None:
 
         logging.getLogger("orderkoi").exception(
             "Failed to notify seller %s about order #%s", seller.id, order.order_number
+        )
+
+
+def _notify_customer(seller: Seller, order: Order) -> None:
+    """Email the customer their confirmation + tracking link.
+
+    The public form requires a customer email, so this always has an
+    address. Same contract as _notify_seller: a notification problem
+    must never cost the customer their order.
+    """
+    try:
+        tracking_url = f"{settings.frontend_url}/track/{order.tracking_code}"
+        subject, body = order_received(
+            store_name=seller.store_name,
+            customer_name=order.customer_name,
+            order_number=order.order_number,
+            tracking_code=order.tracking_code,
+            tracking_url=tracking_url,
+        )
+        send_email(to=order.customer_email, subject=subject, body=body)
+    except Exception:  # noqa: BLE001 — logged, never propagated
+        import logging
+
+        logging.getLogger("orderkoi").exception(
+            "Failed to notify customer about order #%s from store %s",
+            order.order_number,
+            seller.id,
         )

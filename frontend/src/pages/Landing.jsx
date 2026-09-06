@@ -174,6 +174,10 @@ export default function Landing() {
       <footer className="landing-footer">
         <Logo size={24} withWordmark />
         <p>Order tracking for online sellers · Bangladesh 🇧🇩</p>
+        <p>
+          <Link to="/privacy">Privacy Policy</Link> ·{" "}
+          <Link to="/terms">Terms of Service</Link>
+        </p>
       </footer>
     </div>
   );

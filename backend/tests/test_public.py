@@ -34,6 +34,51 @@ def form_payload():
     }
 
 
+# ---------- Honeypot ----------
+
+def test_honeypot_submission_gets_fake_success(client, seller, form_payload, captured_email):
+    """A filled honeypot (bot) gets a plausible 201 — but no order is
+    created, no emails go out, and the seller's quota is untouched."""
+    from conftest import TestingSessionLocal
+    from app.models import Order
+
+    slug = seller["store_slug"]
+    before = (
+        TestingSessionLocal()
+        .query(Order)
+        .filter(Order.seller_id == seller["id"])
+        .count()
+    )
+
+    response = client.post(
+        f"/public/stores/{slug}/orders",
+        json={**form_payload, "website": "http://spam-bot.example"},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    # Right response shape — the bot can't tell it was dropped
+    assert set(body) == {"order_number", "tracking_code", "store_name"}
+
+    after = (
+        TestingSessionLocal()
+        .query(Order)
+        .filter(Order.seller_id == seller["id"])
+        .count()
+    )
+    assert before == after  # nothing was created
+    assert captured_email == []  # nobody was emailed
+
+
+def test_honeypot_empty_is_a_normal_order(client, seller, form_payload, captured_email):
+    """Empty/absent honeypot (a human) creates the order as usual."""
+    response = client.post(
+        f"/public/stores/{seller['store_slug']}/orders",
+        json={**form_payload, "website": ""},
+    )
+    assert response.status_code == 201
+    assert len(captured_email) == 2  # seller + customer notifications
+
+
 # ---------- Store lookup ----------
 
 def test_signup_assigns_store_slug(client, seller):
@@ -103,12 +148,17 @@ def test_submit_order_success(client, seller, seller_payload, auth_headers, form
     track = client.get(f"/track/{data['tracking_code']}")
     assert track.status_code == 200
 
-    # The seller got an email notification
-    assert len(captured_email) == 1
-    email = captured_email[0]
-    assert email["to"] == seller_payload["email"]
-    assert "New order" in email["subject"]
-    assert data["tracking_code"] in email["body"]
+    # The seller got their notification, the customer their confirmation
+    assert len(captured_email) == 2
+    by_recipient = {email["to"]: email for email in captured_email}
+
+    seller_mail = by_recipient[seller_payload["email"]]
+    assert "New order" in seller_mail["subject"]
+
+    customer_mail = by_recipient[form_payload["customer_email"]]
+    assert "received" in customer_mail["subject"].lower()
+    assert data["tracking_code"] in customer_mail["body"]
+    assert f"/track/{data['tracking_code']}" in customer_mail["body"]
 
 
 def test_submit_order_no_auth_required(client, seller, form_payload):

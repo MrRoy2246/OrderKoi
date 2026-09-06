@@ -1,7 +1,8 @@
 import { STATUS_META } from "../utils/orderStatus";
 
-/** Workflow order — placed → delivered, cancelled last. */
-const STATUS_ORDER = ["placed", "confirmed", "shipped", "delivered", "cancelled"];
+/** Workflow order — placed → delivered, cancelled last. Shared by this
+ * component and the pages that compute status totals themselves. */
+export const STATUS_ORDER = ["placed", "confirmed", "shipped", "delivered", "cancelled"];
 
 /**
  * Status breakdown — a composition rail (one pill, one segment per

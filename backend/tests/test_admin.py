@@ -75,12 +75,12 @@ def test_platform_stats(client, admin_headers, auth_headers, seller, order):
 
 
 def test_platform_stats_growth_pulse(client, admin_headers, auth_headers, seller, order):
-    """The conftest order + seller are both fresh, so they land in the
-    month window and the 30-day signup window."""
+    """The conftest order + seller are both fresh, so the default 30-day
+    window's series (which follow the date filter) pick them up."""
     stats = client.get("/admin/stats", headers=admin_headers).json()
-    assert stats["orders_this_month"] >= 1
-    assert stats["gmv_this_month"] >= 1400
-    assert stats["new_sellers_30d"] >= 1
+    assert stats["orders_daily"][-1]["count"] >= 1
+    assert stats["revenue_monthly"][-1]["value"] >= 1400
+    assert stats["sellers_monthly"][-1]["count"] >= 1
 
 
 def test_platform_stats_recent_signups(client, admin_headers, auth_headers, seller):
@@ -97,23 +97,23 @@ def test_platform_stats_recent_signups(client, admin_headers, auth_headers, sell
 
 
 def test_platform_stats_old_month_activity_excluded(client, admin_headers, seller):
-    """An order from a previous business month counts toward totals but
-    not toward the "this month" strip."""
+    """An order from before the window counts toward all-time totals but
+    not toward the window-scoped chart series."""
     from datetime import timedelta
 
     from app.models import Order, Seller
-    from app.timezone import month_start_utc
+    from app.timezone import business_today, day_bounds_utc
     from conftest import TestingSessionLocal
 
     # The suite shares one DB, so other tests' fresh orders may already
-    # be in this month's window — compare before/after instead of
-    # asserting absolute zeros
+    # be in the window — compare before/after instead of asserting
+    # absolute zeros
     before = client.get("/admin/stats", headers=admin_headers).json()
 
     db = TestingSessionLocal()
     try:
         # A separate shop so the auth seller's own (fresh) orders — if
-        # any — can't muddy the this-month assertions
+        # any — can't muddy the window assertions
         old_seller = Seller(
             email=f"old-shop-{uuid.uuid4().hex[:8]}@example.com",
             hashed_password="x",
@@ -124,6 +124,9 @@ def test_platform_stats_old_month_activity_excluded(client, admin_headers, selle
         )
         db.add(old_seller)
         db.flush()
+        # A day BEFORE the default 30-day window (a day before today
+        # would still fall inside it)
+        old_start_dt, _ = day_bounds_utc(business_today() - timedelta(days=35))
         db.add(
             Order(
                 seller_id=old_seller.id,
@@ -133,7 +136,7 @@ def test_platform_stats_old_month_activity_excluded(client, admin_headers, selle
                 customer_phone="01800000000",
                 items=[{"name": "Old thing", "quantity": 1, "price": 500}],
                 total_price=500,
-                created_at=month_start_utc() - timedelta(days=1),
+                created_at=old_start_dt,
             )
         )
         db.commit()
@@ -144,11 +147,13 @@ def test_platform_stats_old_month_activity_excluded(client, admin_headers, selle
     # The backdated order appears in all-time numbers…
     assert stats["total_orders"] == before["total_orders"] + 1
     assert stats["platform_revenue"] >= before["platform_revenue"] + 500
-    # …but not in this month's strip
-    assert stats["orders_this_month"] == before["orders_this_month"]
-    assert stats["gmv_this_month"] == before["gmv_this_month"]
-    # The shops themselves were created just now — recent signups
-    assert stats["new_sellers_30d"] == before["new_sellers_30d"] + 1
+    # …but not in the window-scoped series (sum of buckets unchanged)
+    assert sum(b["value"] for b in stats["revenue_monthly"]) == sum(
+        b["value"] for b in before["revenue_monthly"]
+    )
+    assert sum(b["count"] for b in stats["orders_daily"]) == sum(
+        b["count"] for b in before["orders_daily"]
+    )
 
 
 def test_admin_changes_seller_plan(client, admin_headers, auth_headers, seller):
@@ -273,7 +278,6 @@ def test_admin_comp_grant_marks_ledger_and_excludes_revenue(client, admin_header
     # Revenue: nothing counted from the comp grant
     stats = client.get("/admin/stats", headers=admin_headers).json()
     assert stats["subscription_revenue_total"] == before["subscription_revenue_total"]
-    assert stats["subscription_revenue_30d"] == before["subscription_revenue_30d"]
 
 
 def test_paid_activation_counts_in_subscription_revenue(client, admin_headers, seller):
@@ -286,7 +290,6 @@ def test_paid_activation_counts_in_subscription_revenue(client, admin_headers, s
     )
     stats = client.get("/admin/stats", headers=admin_headers).json()
     assert stats["subscription_revenue_total"] == before["subscription_revenue_total"] + 399
-    assert stats["subscription_revenue_30d"] == before["subscription_revenue_30d"] + 399
 
 
 def test_comp_default_false_and_cumulative_revenue(client, admin_headers, seller):
@@ -587,6 +590,8 @@ def test_seller_shop_stats_custom_range_excludes_other_seller(
     — it was created in this test.)"""
     import uuid as uuid_mod
 
+    from conftest import verify_account
+
     # A second shop with one order today
     other_payload = {
         "email": f"shopstats-{uuid_mod.uuid4().hex[:10]}@example.com",
@@ -596,6 +601,7 @@ def test_seller_shop_stats_custom_range_excludes_other_seller(
     }
     signup = client.post("/auth/signup", json=other_payload)
     assert signup.status_code == 201
+    verify_account(other_payload["email"])
     other_login = client.post(
         "/auth/login",
         json={"email": other_payload["email"], "password": "password" if False else "secretpass123"},
@@ -678,6 +684,8 @@ def test_seller_orders_csv_excludes_other_shops(client, admin_headers, seller, a
     """A second shop's order must not appear in this shop's CSV."""
     import uuid as uuid_mod
 
+    from conftest import verify_account
+
     other_payload = {
         "email": f"shopcsv-{uuid_mod.uuid4().hex[:10]}@example.com",
         "password": "secretpass123",
@@ -685,6 +693,7 @@ def test_seller_orders_csv_excludes_other_shops(client, admin_headers, seller, a
         "phone": "01712345676",
     }
     client.post("/auth/signup", json=other_payload)
+    verify_account(other_payload["email"])
     other_login = client.post(
         "/auth/login",
         json={"email": other_payload["email"], "password": other_payload["password"]},

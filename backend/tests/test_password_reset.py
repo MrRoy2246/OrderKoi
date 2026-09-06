@@ -70,6 +70,45 @@ def test_reset_password_full_flow(client, seller, seller_payload, captured_email
     assert new.status_code == 200
 
 
+def test_reset_invalidates_preexisting_tokens(client, seller, seller_payload, captured_email):
+    """A session token minted BEFORE the reset must stop working —
+    a stolen token can't outlive the owner resetting the password."""
+    # Log in and grab a token. The 1.1s nap guarantees the token's
+    # whole-second `iat` is strictly before the reset's cutoff second —
+    # without it the test would flake when both land in one second.
+    login = client.post(
+        "/auth/login",
+        json={"email": seller_payload["email"], "password": seller_payload["password"]},
+    )
+    assert login.status_code == 200
+    old_token = login.json()["access_token"]
+    auth_headers = {"Authorization": f"Bearer {old_token}"}
+    assert client.get("/auth/me", headers=auth_headers).status_code == 200
+    import time
+
+    time.sleep(1.1)
+
+    # Reset the password
+    client.post("/auth/forgot-password", json={"email": seller_payload["email"]})
+    token = extract_token(captured_email[0]["body"])
+    reset = client.post(
+        "/auth/reset-password", json={"token": token, "new_password": "brandnewpass99"}
+    )
+    assert reset.status_code == 200
+
+    # The pre-reset token is now rejected…
+    assert client.get("/auth/me", headers=auth_headers).status_code == 401
+
+    # …and a fresh login works again
+    fresh = client.post(
+        "/auth/login",
+        json={"email": seller_payload["email"], "password": "brandnewpass99"},
+    )
+    assert fresh.status_code == 200
+    fresh_headers = {"Authorization": f"Bearer {fresh.json()['access_token']}"}
+    assert client.get("/auth/me", headers=fresh_headers).status_code == 200
+
+
 def test_reset_token_is_single_use(client, seller, seller_payload, captured_email):
     client.post("/auth/forgot-password", json={"email": seller_payload["email"]})
     token = extract_token(captured_email[0]["body"])

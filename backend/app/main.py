@@ -3,12 +3,14 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.database import Base, engine
+from app.database import Base, engine, get_db
 from app.rate_limit import enforce_rate_limits
 from app.routes import admin, auth, orders, public, tracking
 
@@ -78,6 +80,25 @@ async def rate_limit_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+# Browser-hardening headers on every response. CSP is deliberately NOT
+# set here: this service is a JSON API — the browser-facing CSP belongs
+# to whatever serves the frontend (nginx/Caddy at deploy time).
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+}
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    for header, value in SECURITY_HEADERS.items():
+        response.headers[header] = value
+    return response
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Never leak stack traces or internals to clients — log instead."""
@@ -103,3 +124,22 @@ def health_check() -> dict:
         "app": settings.app_name,
         "environment": settings.environment,
     }
+
+
+@app.get("/ready", tags=["system"])
+def readiness_check(db: Session = Depends(get_db)) -> JSONResponse:
+    """Readiness probe — actually touches the database.
+
+    /health says "the process is up"; /ready says "and it can serve
+    requests" — a load balancer or deploy check should use this one,
+    because a DB outage makes the app up-but-useless.
+    """
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception:  # noqa: BLE001 — any DB failure means not ready
+        logger.exception("Readiness check failed — database unreachable")
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not ready", "reason": "database unavailable"},
+        )
+    return JSONResponse(status_code=200, content={"status": "ready"})

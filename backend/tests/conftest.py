@@ -3,8 +3,11 @@
 import os
 
 # Must be set before the app reads its settings — disables rate
-# limiting for the suite (it has its own dedicated unit tests).
+# limiting for the suite (it has its own dedicated unit tests), and
+# forces the email console backend so fixture signups never attempt a
+# real SMTP connection (backend/.env may carry live SMTP credentials).
 os.environ["ENVIRONMENT"] = "test"
+os.environ["SMTP_HOST"] = ""
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -43,6 +46,19 @@ def _override_get_db():
 app.dependency_overrides[get_db] = _override_get_db
 
 
+@pytest.fixture(autouse=True)
+def _fresh_login_throttle():
+    """Reset the in-memory login throttle around every test — lockout
+    state from one test must never influence another."""
+    from app import login_throttle
+
+    login_throttle._failures.clear()
+    login_throttle._locked_until.clear()
+    yield
+    login_throttle._failures.clear()
+    login_throttle._locked_until.clear()
+
+
 @pytest.fixture
 def client():
     return TestClient(app)
@@ -61,11 +77,32 @@ def seller_payload():
     }
 
 
+def verify_account(email: str) -> None:
+    """Flip email_verified on an account directly — the test-suite
+    equivalent of clicking the verification link.
+
+    Fixture accounts come pre-verified so the rest of the suite can
+    log in; the verification flow itself has dedicated tests in
+    test_email_verification.py.
+    """
+    db = TestingSessionLocal()
+    try:
+        from app.models import Seller
+
+        seller = db.query(Seller).filter(Seller.email == email).first()
+        assert seller is not None, f"account {email} must exist before verifying"
+        seller.email_verified = True
+        db.commit()
+    finally:
+        db.close()
+
+
 @pytest.fixture
 def seller(client, seller_payload):
-    """A registered seller account."""
+    """A registered (and email-verified) seller account."""
     response = client.post("/auth/signup", json=seller_payload)
     assert response.status_code == 201, response.text
+    verify_account(seller_payload["email"])
     return response.json()
 
 
@@ -135,6 +172,7 @@ def admin_headers(client, admin_payload):
     """A dedicated platform-admin account (separate from any seller)."""
     signup = client.post("/auth/signup", json=admin_payload)
     assert signup.status_code == 201
+    verify_account(admin_payload["email"])
     promote_to_admin(admin_payload["email"])
 
     login = client.post(

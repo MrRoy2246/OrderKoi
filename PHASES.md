@@ -189,10 +189,10 @@ confirming (the natural F-commerce flow).
 ---
 
 ## Phase 7.10 — Pro Durations & Upgrade Requests
-**Goal:** Real subscription business with manual bKash/Nagad payments.
+**Goal:** Real subscription business with manual bKash payments.
 
 Pro now has durations: **1 month (৳299) · 6 months (৳1,499) · 12 months (৳2,499)**. The flow:
-seller pays via bKash/Nagad → submits an upgrade request with the transaction ID →
+seller pays via bKash → submits an upgrade request with the transaction ID →
 admin gets an email → admin verifies the payment and approves → Pro activates until
 the paid-for date (renewals stack on remaining time). Expired Pro automatically
 falls back to Free limits.

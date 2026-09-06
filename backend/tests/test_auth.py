@@ -79,6 +79,85 @@ def test_login_unknown_email_gives_same_message(client, seller_payload):
     assert unknown.json()["detail"] == wrong.json()["detail"]
 
 
+def test_login_locks_after_repeated_failures(client, seller, seller_payload):
+    """5 wrong passwords lock the account — even the CORRECT password
+    is refused while locked (an attacker must not get a free try)."""
+    for _ in range(5):
+        response = client.post(
+            "/auth/login",
+            json={"email": seller_payload["email"], "password": "WRONGpass999"},
+        )
+        assert response.status_code == 401
+
+    locked = client.post(
+        "/auth/login",
+        json={"email": seller_payload["email"], "password": seller_payload["password"]},
+    )
+    assert locked.status_code == 429
+    assert "Retry-After" in locked.headers
+
+
+def test_login_lockout_ignores_ip_rotation(client, seller, seller_payload):
+    """The lockout is per-account, so the same failure count triggers it
+    even though every request looks like a new client (the in-memory
+    throttle keys on the email, not the IP)."""
+    from app import login_throttle
+
+    for _ in range(5):
+        login_throttle.record_failure(seller_payload["email"])
+
+    assert login_throttle.lockout_remaining(seller_payload["email"]) is not None
+    response = client.post(
+        "/auth/login",
+        json={"email": seller_payload["email"], "password": seller_payload["password"]},
+    )
+    assert response.status_code == 429
+
+
+def test_login_success_clears_failure_count(client, seller, seller_payload):
+    """4 failures, then a successful login, then 4 more — never reaches
+    the 5-failure threshold because success reset the counter."""
+    for _ in range(4):
+        client.post(
+            "/auth/login",
+            json={"email": seller_payload["email"], "password": "WRONGpass999"},
+        )
+    ok = client.post(
+        "/auth/login",
+        json={"email": seller_payload["email"], "password": seller_payload["password"]},
+    )
+    assert ok.status_code == 200
+    for _ in range(4):
+        client.post(
+            "/auth/login",
+            json={"email": seller_payload["email"], "password": "WRONGpass999"},
+        )
+    still_ok = client.post(
+        "/auth/login",
+        json={"email": seller_payload["email"], "password": seller_payload["password"]},
+    )
+    assert still_ok.status_code == 200
+
+
+def test_login_lockout_expires(monkeypatch):
+    """The lock lifts after LOCKOUT_SECONDS — simulated by moving the
+    clock forward rather than sleeping 15 minutes."""
+    import time as time_module
+
+    from app import login_throttle
+
+    email = "clock-test@example.com"
+    now = 1_000_000.0
+    monkeypatch.setattr(time_module, "monotonic", lambda: now)
+
+    for _ in range(login_throttle.MAX_FAILURES):
+        login_throttle.record_failure(email)
+    assert login_throttle.lockout_remaining(email) is not None
+
+    monkeypatch.setattr(time_module, "monotonic", lambda: now + login_throttle.LOCKOUT_SECONDS + 1)
+    assert login_throttle.lockout_remaining(email) is None
+
+
 def test_me_with_valid_token(client, auth_headers, seller):
     response = client.get("/auth/me", headers=auth_headers)
     assert response.status_code == 200

@@ -68,6 +68,8 @@ def test_stats_are_seller_scoped(client, auth_headers):
     )
 
     # A second seller sees only their own (empty) stats
+    from conftest import verify_account
+
     client.post(
         "/auth/signup",
         json={
@@ -76,6 +78,7 @@ def test_stats_are_seller_scoped(client, auth_headers):
             "store_name": "Other Store",
         },
     )
+    verify_account("other-stats@example.com")
     login = client.post(
         "/auth/login", json={"email": "other-stats@example.com", "password": "otherstats123"}
     )

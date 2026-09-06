@@ -1,6 +1,6 @@
 """Upgrade request & Pro duration tests.
 
-Real-world flow: seller pays via bKash/Nagad, submits a request with
+Real-world flow: seller pays via bKash, submits a request with
 the transaction ID, admin verifies and approves — Pro activates for
 the paid-for months. Renewals stack; expiry is enforced.
 """
@@ -71,7 +71,7 @@ def test_admin_approves_request_activates_pro(client, seller, auth_headers, admi
     # Seller asks for 6 months
     request = client.post(
         "/auth/upgrade-requests",
-        json={"months": 6, "payment_reference": "NAGAD-XYZ"},
+        json={"months": 6, "payment_reference": "BKASH-XYZ"},
         headers=auth_headers,
     ).json()
 
@@ -328,6 +328,8 @@ def test_subscription_history_scoped_to_self(client, auth_headers):
     # no subscription event yet)
     client.post("/auth/upgrade-requests", json={"months": 1}, headers=auth_headers)
 
+    from conftest import verify_account
+
     other = client.post(
         "/auth/signup",
         json={
@@ -336,6 +338,7 @@ def test_subscription_history_scoped_to_self(client, auth_headers):
             "store_name": "History Other",
         },
     ).json()
+    verify_account("history-other@example.com")
     login = client.post(
         "/auth/login",
         json={"email": "history-other@example.com", "password": "secretpass123"},

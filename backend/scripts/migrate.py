@@ -20,6 +20,8 @@ NEW_COLUMNS = {
         "plan": "ALTER TABLE sellers ADD COLUMN plan VARCHAR(20) NOT NULL DEFAULT 'free'",
         "plan_expires_at": "ALTER TABLE sellers ADD COLUMN plan_expires_at DATETIME",
         "store_slug": "ALTER TABLE sellers ADD COLUMN store_slug VARCHAR(120)",
+        "email_verified": "ALTER TABLE sellers ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT 0",
+        "token_invalid_before": "ALTER TABLE sellers ADD COLUMN token_invalid_before DATETIME",
     },
     "orders": {
         "source": "ALTER TABLE orders ADD COLUMN source VARCHAR(20) NOT NULL DEFAULT 'dashboard'",
@@ -64,6 +66,15 @@ def run() -> None:
             print("All sellers already have a store slug")
     finally:
         db.close()
+
+    # Backfill: accounts created before email verification existed are
+    # grandfathered in as verified — nobody gets locked out of their
+    # account by the new login gate
+    with engine.begin() as connection:
+        connection.execute(
+            text("UPDATE sellers SET email_verified = 1 WHERE email_verified = 0")
+        )
+    print("Existing sellers backfilled as email_verified")
 
     # Uniqueness at the DB level for fresh-slug inserts (SQLite ALTER
     # can't add constraints, so an explicit unique index does the job)

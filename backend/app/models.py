@@ -77,6 +77,16 @@ class Seller(Base):
     role: Mapped[str] = mapped_column(String(20), default="seller", nullable=False)
     plan: Mapped[str] = mapped_column(String(20), default="free", nullable=False)
     plan_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Login is blocked until the seller verifies their email address
+    # (the signup email carries a one-time link). Existing accounts
+    # were backfilled to True when the column was introduced.
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Password resets cut off every token issued before this moment —
+    # a stolen session can't outlive the owner resetting the password.
+    # NULL = no reset has happened; all tokens remain valid.
+    token_invalid_before: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -84,6 +94,28 @@ class Seller(Base):
 
     def __repr__(self) -> str:
         return f"<Seller id={self.id} email={self.email!r} store={self.store_name!r}>"
+
+
+class EmailVerificationToken(Base):
+    """A single-use email-verification token for a seller.
+
+    Same security shape as PasswordResetToken: only the SHA-256 hash
+    of the token is stored, so a database leak can't be used to
+    verify anyone's address.
+    """
+
+    __tablename__ = "email_verification_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    seller_id: Mapped[int] = mapped_column(
+        ForeignKey("sellers.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class PasswordResetToken(Base):
@@ -111,7 +143,7 @@ class UpgradeRequest(Base):
     """A seller's request to upgrade to Pro for N months.
 
     Real-world flow (manual payments, Bangladesh-style): the seller pays
-    via bKash/Nagad, submits the request with the transaction reference,
+    via bKash, submits the request with the transaction reference,
     and the platform admin verifies the payment and approves — which
     activates Pro until the paid-for date. Rejected requests stay as
     a record for both sides.
@@ -125,7 +157,7 @@ class UpgradeRequest(Base):
     )
     # Paid-for duration: 1, 6 or 12 months
     months: Mapped[int] = mapped_column(Integer, nullable=False)
-    # bKash/Nagad transaction ID the admin verifies against
+    # bKash transaction ID the admin verifies against
     payment_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # pending -> approved | rejected
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False, index=True)

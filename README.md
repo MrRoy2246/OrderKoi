@@ -17,7 +17,7 @@ OrderKoi is an order-tracking platform for small online sellers (F-commerce / Fa
 - 🔗 Public tracking page: customer checks status via a link + tracking code
 - 📝 Public order form: customers submit orders themselves — no login, no Messenger retyping
 - 📊 Analytics: order counts, status breakdown, revenue (all scoped by date range)
-- 💳 Free plan (15 orders, one time) → Pro (unlimited; 1/6/12 months, bKash/Nagad)
+- 💳 Free plan (15 orders, one time) → Pro (unlimited; 1/6/12 months, bKash)
 - 🔐 Secure JWT authentication
 
 ## Tech Stack

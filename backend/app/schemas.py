@@ -47,12 +47,18 @@ class SellerOut(BaseModel):
     role: Literal["seller", "admin"] = "seller"
     plan: Literal["free", "pro"] = "free"
     plan_expires_at: datetime | None = None
+    email_verified: bool = False
     created_at: datetime
 
 
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class ResendVerificationRequest(BaseModel):
+    """Ask for the signup verification email to be sent again."""
+    email: EmailStr
 
 
 class SellerUpdate(BaseModel):
@@ -120,15 +126,10 @@ class AdminStatsOut(BaseModel):
     total_orders: int
     platform_revenue: float
     pending_upgrade_requests: int
-    # Growth pulse — this business month (Asia/Dhaka) and last 30 days
-    orders_this_month: int
-    gmv_this_month: float
-    new_sellers_30d: int
     recent_signups: list[RecentSignupOut]
     # Subscription money — Pro activations the sellers actually paid
     # for (comp grants are excluded), computed from the ledger
     subscription_revenue_total: float = 0.0
-    subscription_revenue_30d: float = 0.0
     # Chart series (business-timezone buckets, oldest first) — all
     # three follow the date filter; granularity adapts to the window
     orders_daily: list["DailyCount"] = []  # the window, one bucket per day
@@ -164,7 +165,7 @@ class UpgradeRequestCreate(BaseModel):
     """A seller asking to go Pro for a paid-for duration."""
 
     months: Literal[1, 6, 12]
-    # bKash/Nagad transaction ID so the admin can verify the payment
+    # bKash transaction ID so the admin can verify the payment
     payment_reference: str | None = Field(default=None, max_length=100)
 
 
@@ -336,6 +337,10 @@ class PublicOrderCreate(BaseModel):
     customer_address: str = Field(min_length=1, max_length=500)
     items: list[OrderItem] = Field(min_length=1, max_length=100)
     notes: str | None = Field(default=None, max_length=1000)
+    # Honeypot — the real form renders this field invisible; humans
+    # never fill it in. A non-empty value means a bot, and the request
+    # gets a fake success instead of an order.
+    website: str | None = Field(default=None, max_length=200)
 
 
 class PublicOrderCreated(BaseModel):

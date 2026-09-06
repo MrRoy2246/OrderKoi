@@ -23,6 +23,7 @@ RULES: list[tuple[str, str | None, int, float]] = [
     ("/auth/login", None, 10, 60),
     ("/auth/signup", None, 5, 60),
     ("/auth/forgot-password", None, 5, 60),  # prevents email bombing
+    ("/auth/resend-verification", None, 5, 60),  # same — sends email
     ("/track/", None, 60, 60),
     # Every form submission burns the seller's free-plan quota and
     # triggers a notification email — keep submissions tight. Scoped

@@ -2,7 +2,7 @@
 
 Admin-only: see every seller, who subscribed (Pro) vs free,
 platform-wide stats, manage subscription plans, and approve or reject
-Pro upgrade requests (the seller pays via bKash/Nagad first, then the
+Pro upgrade requests (the seller pays via bKash first, then the
 admin verifies the payment and activates the paid-for duration).
 """
 
@@ -46,7 +46,6 @@ from app.timezone import (
     business_today,
     business_tz,
     day_bounds_utc,
-    month_start_utc,
     sqlite_shift_modifiers,
     to_business_time,
 )
@@ -160,9 +159,9 @@ def platform_stats(
     # custom ranges); short rolling presets keep the trailing
     # 12-month context — a 7-day window bucketed by month is one
     # lonely bar, and money views want the longer story.
-    explicit_range = start is not None or end is not None
     sellers = db.query(Seller).all()
     seller_ids = [seller.id for seller in sellers]
+    explicit_range = start is not None or end is not None
 
     total_orders = 0
     platform_revenue = 0.0
@@ -191,34 +190,6 @@ def platform_stats(
         .scalar()
     )
 
-    # Growth pulse — this business month and the last 30 days.
-    # Same window conventions as the seller stats (Asia/Dhaka days).
-    month_start = month_start_utc()
-    # Rolling 30-day window — aware, because as_aware() comparisons below
-    # need both sides aware (naive-vs-aware raises TypeError)
-    thirty_days_ago = utcnow() - timedelta(days=30)
-
-    if shops:
-        month_rows = (
-            db.query(
-                func.count(Order.id),
-                func.coalesce(func.sum(Order.total_price), 0.0),
-            )
-            .filter(
-                Order.seller_id.in_([s.id for s in shops]),
-                Order.created_at >= month_start,
-                Order.status != OrderStatus.CANCELLED.value,
-            )
-            .one()
-        )
-        orders_this_month = int(month_rows[0])
-        gmv_this_month = round(float(month_rows[1]), 2)
-        new_sellers_30d = sum(
-            1 for s in shops if as_aware(s.created_at) >= thirty_days_ago
-        )
-    else:
-        orders_this_month, gmv_this_month, new_sellers_30d = 0, 0.0, 0
-
     # The 5 newest stores — the platform's heartbeat on the overview
     recent = (
         db.query(Seller)
@@ -237,12 +208,9 @@ def platform_stats(
     ]
 
     # Subscription money — what the sellers actually paid for Pro
-    # (comp grants don't count). `since` must be naive UTC to compare
-    # against the stored ledger timestamps.
+    # (comp grants don't count). The all-time total anchors the
+    # "Your earnings" KPI's context line.
     subscription_revenue_total = _subscription_revenue(db)
-    subscription_revenue_30d = _subscription_revenue(
-        db, since=utcnow().replace(tzinfo=None) - timedelta(days=30)
-    )
 
     # Monthly paid-Pro money (spans the selected window, capped at 12
     # months — the "your earnings" chart). Comp grants excluded, priced
@@ -258,9 +226,11 @@ def platform_stats(
         .all()
     )
     sub_month_map: dict[str, float] = {}
+    sub_month_count_map: dict[str, int] = {}
     for created_at, months in paid_events:
         key = to_business_time(as_aware(created_at)).strftime("%Y-%m")
         sub_month_map[key] = sub_month_map.get(key, 0.0) + PRO_PRICES.get(months, 0)
+        sub_month_count_map[key] = sub_month_count_map.get(key, 0) + 1
 
     # ---- Chart series (business-timezone buckets, oldest first) ----
 
@@ -340,10 +310,12 @@ def platform_stats(
         signup_map = {str(day): int(count) for day, count in signup_day_rows}
         # Paid-Pro money by day, from the ledger
         sub_day_map: dict[str, float] = {}
+        sub_day_count_map: dict[str, int] = {}
         for created_at, months in paid_events:
             if window_start_dt <= created_at < window_end_dt:
                 key = to_business_time(as_aware(created_at)).strftime("%Y-%m-%d")
                 sub_day_map[key] = sub_day_map.get(key, 0.0) + PRO_PRICES.get(months, 0)
+                sub_day_count_map[key] = sub_day_count_map.get(key, 0) + 1
 
         # Shared series of day keys — one pass builds all three series
         day_keys = [(window_start + timedelta(days=i)).isoformat() for i in range(window_days)]
@@ -369,7 +341,7 @@ def platform_stats(
             ChartBucket(
                 date=key,
                 month=key,
-                count=0,
+                count=sub_day_count_map.get(key, 0),
                 value=round(sub_day_map.get(key, 0.0), 2),
             )
             for key in day_keys
@@ -444,7 +416,7 @@ def platform_stats(
         subscription_monthly = [
             ChartBucket(
                 month=m.month,
-                count=0,
+                count=sub_month_count_map.get(m.month, 0),
                 value=round(sub_month_map.get(m.month, 0.0), 2),
             )
             for m in months_series
@@ -462,12 +434,8 @@ def platform_stats(
         "total_orders": total_orders,
         "platform_revenue": platform_revenue,
         "pending_upgrade_requests": pending_upgrades,
-        "orders_this_month": orders_this_month,
-        "gmv_this_month": gmv_this_month,
-        "new_sellers_30d": new_sellers_30d,
         "recent_signups": recent_signups,
         "subscription_revenue_total": round(subscription_revenue_total, 2),
-        "subscription_revenue_30d": round(subscription_revenue_30d, 2),
         "orders_daily": orders_daily,
         "revenue_monthly": revenue_monthly,
         "sellers_monthly": sellers_monthly,
@@ -819,7 +787,7 @@ def handle_upgrade_request(
             body=(
                 "We couldn't verify the payment for your Pro upgrade request.\n\n"
                 "If you believe this is a mistake, reply to this email or "
-                "double-check the bKash/Nagad transaction ID and submit a new "
+                "double-check the bKash transaction ID and submit a new "
                 "request.\n\n"
                 "— OrderKoi"
             ),

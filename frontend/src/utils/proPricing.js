@@ -1,7 +1,7 @@
 /**
  * Pro pricing — one source of truth for what each duration costs.
  * Sellers see these on the Settings page; the admin sees the expected
- * amount on upgrade requests (to check against the bKash/Nagad
+ * amount on upgrade requests (to check against the bKash
  * statement). Edit here and both stay in sync.
  */
 export const PRO_OPTIONS = [

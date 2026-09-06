@@ -29,11 +29,15 @@ function niceMax(value) {
   return niceFraction * 10 ** exponent;
 }
 
-/** 3-4 clean tick values from 0 up to the nice max. */
+/** 3-4 clean tick values from 0 up to the nice max. Rounded steps can
+ * collide at small scales (max=1 → [0,1,1,2]), and ticks become React
+ * keys — dedupe so they're always unique and strictly ascending. */
 function ticksFor(max) {
   const steps = max <= 2.5 ? 2 : max <= 10 ? 2.5 : 3;
   const step = max / steps;
-  return Array.from({ length: steps + 1 }, (_, i) => Math.round(step * i));
+  return [...new Set(
+    Array.from({ length: steps + 1 }, (_, i) => Math.round(step * i))
+  )];
 }
 
 /** Compact value text for axis ticks and tooltips. */

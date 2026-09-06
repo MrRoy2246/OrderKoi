@@ -26,6 +26,9 @@ export default function OrderForm() {
   const [customerAddress, setCustomerAddress] = useState("");
   const [items, setItems] = useState([{ ...EMPTY_ITEM }]);
   const [notes, setNotes] = useState("");
+  // Honeypot — off-screen field bots fill and humans never see.
+  // Submitted as `website`; the backend silently drops such orders.
+  const [website, setWebsite] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -122,6 +125,7 @@ export default function OrderForm() {
             price: Number(item.price) || 0,
           })),
         notes: notes.trim() || null,
+        website: website || null,
       };
       const result = await api.publicForm.submitOrder(slug, payload);
       setConfirmation(result);
@@ -312,6 +316,22 @@ export default function OrderForm() {
         )}
 
         <form onSubmit={handleSubmit} noValidate>
+          {/* Honeypot — visually and programmatically out of reach for
+              humans (off-screen, no tab stop, hidden from AT); bots
+              that auto-fill forms type into it and get dropped. */}
+          <div aria-hidden="true" style={{ position: "absolute", left: "-9999px", top: 0 }}>
+            <label htmlFor="website">Leave this field empty</label>
+            <input
+              id="website"
+              type="text"
+              name="website"
+              tabIndex={-1}
+              autoComplete="off"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+            />
+          </div>
+
           <div className="field">
             <label htmlFor="customer_name">Your name *</label>
             <input

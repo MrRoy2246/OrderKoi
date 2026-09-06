@@ -5,9 +5,9 @@ import Icon from "./icons";
 import { parseServerDate } from "../utils/orderStatus";
 import { PRO_OPTIONS } from "../utils/proPricing";
 
-/** Where sellers send payment. Replace with your real numbers. */
+/** Where sellers send payment. */
 const PAYMENT_INSTRUCTIONS =
-  "Send the amount via bKash/Nagad to 01XXXXXXXXX (Personal), then submit " +
+  "Send the amount via bKash to 01736060259 (Personal), then submit " +
   "the request below with your transaction ID. We'll activate Pro after " +
   "verifying the payment (usually within a few hours).";
 
@@ -127,7 +127,7 @@ export default function PlanSection() {
     setSuccess(null);
 
     if (!paymentRef.trim()) {
-      setError("Please enter your bKash/Nagad transaction ID so we can verify the payment.");
+      setError("Please enter your bKash transaction ID so we can verify the payment.");
       return;
     }
 
@@ -254,7 +254,7 @@ export default function PlanSection() {
               <p className="payment-instructions">{PAYMENT_INSTRUCTIONS}</p>
               <div className="field">
                 <label htmlFor="payment_ref">
-                  bKash / Nagad transaction ID *
+                  bKash transaction ID *
                 </label>
                 <input
                   id="payment_ref"

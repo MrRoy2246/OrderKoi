@@ -6,7 +6,7 @@ import { BarChart } from "../components/Charts";
 import { DashboardFilters, rangeLabel, rangeToWindow } from "../components/DashboardFilters";
 import Icon from "../components/icons";
 import { SkeletonCard, SkeletonRows } from "../components/States";
-import StatusBreakdown from "../components/StatusBreakdown";
+import StatusBreakdown, { STATUS_ORDER } from "../components/StatusBreakdown";
 import { formatTk, parseServerDate } from "../utils/orderStatus";
 
 const DEFAULT_RANGE = "30d";

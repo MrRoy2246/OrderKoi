@@ -58,9 +58,10 @@ export function AuthProvider({ children }) {
       },
 
       async signup(payload) {
-        await api.auth.signup(payload); // creates the account
-        // Then log in immediately for a smooth experience
-        return this.login(payload.email, payload.password);
+        // Creates the account only — login stays 403-blocked until the
+        // email address is verified, so no auto-login here. The signup
+        // page shows its "check your email" screen on success.
+        await api.auth.signup(payload);
       },
 
       logout() {
