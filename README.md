@@ -32,6 +32,7 @@ OrderKoi is an order-tracking platform for small online sellers (F-commerce / Fa
 ## Documentation
 
 - 📋 **[PHASES.md](./PHASES.md)** — the full build plan with self-testing checklists
+- 📊 **[ORDERKOI_STATUS.md](./ORDERKOI_STATUS.md)** — current state, launch order, open items
 - 🐍 **[docs/BACKEND_GUIDE.md](./docs/BACKEND_GUIDE.md)** — backend setup, run & test guide
 - ⚛️ **[docs/FRONTEND_GUIDE.md](./docs/FRONTEND_GUIDE.md)** — frontend setup, run & test guide
 
@@ -44,10 +45,17 @@ OrderKoi is an order-tracking platform for small online sellers (F-commerce / Fa
 - [x] Phase 4 — Seller Dashboard: Order Management
 - [x] Phase 5 — Public Tracking Page
 - [x] Phase 6 — Analytics & Store Settings
-- [x] Phase 7 — Testing & Hardening (147/147 tests)
+- [x] Phase 7 — Testing & Hardening
 - [x] Phase 7.5–7.7 — Admin Panel, Plans, Password Reset
 - [x] Phase 7.8 — Public Order Form (customers order without any login)
 - [x] Phase 7.9–7.10 — Dashboard date ranges, Pro durations & upgrade requests
 - [x] Phase 7.11–7.12 — Subscription card, custom reports & admin subscription history
 - [x] Phase 7.13 — Free-plan allowance (15 one-time), limit experience, seller history (2026-09-05)
-- [ ] Phase 8 — Production Ready & Deployment (next: SMTP → PostgreSQL → Docker)
+- [x] Phase 8a — Real SMTP email: verification, order & status emails, background send with retry (2026-09-06)
+- [x] Phase 8a+ — Pre-deploy hardening: JWT invalidation on reset, login lockout, security headers, /ready, honeypot, 404, Privacy/Terms, Playwright E2E, daily DB backups, favicon/og-image/robots.txt (2026-09-06)
+- [ ] Phase 8b — PostgreSQL shift (next)
+- [ ] Phase 8c — Dockerize & deploy (after 8b)
+- [ ] Phase 8d — Launch guardrails: real email provider, Sentry, uptime monitoring, domain
+- [ ] Phase 8e — Fast-follow hardening: admin MFA, pagination, Redis limiter, load test
+
+**Test health:** backend 177/177 · Playwright E2E 5/5 · build + lint clean.

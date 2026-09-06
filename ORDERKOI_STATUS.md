@@ -36,7 +36,7 @@ _Last updated: 2026-09-06_
 
 ---
 
-## 🔴 Phase 8a — Real SMTP email (in progress)
+## ✅ Phase 8a — Real SMTP email (DONE 2026-09-06)
 
 - [x] `backend/.env` + `backend/.env.example` — all SMTP credentials live in env (Gmail: `smtp.gmail.com:587` STARTTLS, app password; empty `SMTP_HOST` = console backend). Switching senders = edit `.env`/compose env only.
 - [x] Signup sends welcome + verification email (combined); `EmailVerificationToken` model (SHA-256 hashed, single-use, 24h); `GET /auth/verify-email?token=…` activates; login 403-blocked until verified; `POST /auth/resend-verification` (anti-enumeration, rate-limited); existing accounts backfilled verified. Frontend: `/verify-email` page, Signup "check your email" state, Login resend button.
@@ -44,13 +44,15 @@ _Last updated: 2026-09-06_
 - [x] Backend tests 165/165 incl. 18 new email tests (`test_email_verification.py` + additions).
 - [x] ~~**← waiting on user:** Gmail app password~~ DONE 2026-09-06 — live SMTP verified end-to-end (signup+verify, login gate, resend, order emails).
 
-## 🔴 Phase 8b — PostgreSQL shift
+## 🔴 Phase 8b — PostgreSQL shift (next — user said "in a few days")
 
 - [ ] Add `psycopg[binary]` to `backend/requirements.txt`
 - [ ] Change `DATABASE_URL` to `postgresql+psycopg://…` in `.env` (config already supports it — `app/database.py` only special-cases `sqlite://` URLs)
-- [ ] Verify the aware/naive datetime handling against Postgres (SQLite returns naive datetimes; Postgres with `DateTime(timezone=True)` returns aware — `as_aware()` and the timezone helpers must still line up)
+- [ ] `Float` money columns → `Numeric(12,2)` (exact taka — no floating-point drift)
+- [ ] Rewrite SQLite-specific date SQL; verify the aware/naive datetime handling against Postgres (SQLite returns naive datetimes; Postgres with `DateTime(timezone=True)` returns aware — `as_aware()` and the timezone helpers must still line up)
 - [ ] Run the full test suite against Postgres (tests currently use in-memory SQLite — decide whether to keep SQLite for tests, which is fine)
-- [ ] Check `scripts/migrate.py` is SQLite-only and not needed once on Postgres (fresh schema via `create_all`; Alembic remains the future proper answer)
+- [ ] Adopt Alembic for schema management on Postgres (replaces `create_all` + `scripts/migrate.py`, which is SQLite-only)
+- [ ] Decide: migrate existing dev data (pgloader / small script) or start clean
 
 ## 🔴 Phase 8c — Dockerize + deploy
 
@@ -63,16 +65,28 @@ _Last updated: 2026-09-06_
 - [ ] VPS or managed host + domain; nightly DB backups (cron `pg_dump` to a second location); uptime monitoring
 - [ ] Decide: point `docker-compose` at the existing dev Postgres data (migrated) or start clean
 
-## 🟠 Before/just after launch
+## 🟠 Before/just after launch (Phase 8d — launch guardrails)
 
 - [x] Real bKash number in `frontend/src/components/PlanSection.jsx` — 01736060259 (Personal), done 2026-09-06
 - [x] Legal & trust pages — Privacy Policy, Terms of Service, contact email (landing footer) — done 2026-09-06 (`/privacy`, `/terms`)
 - [x] 404 page — done 2026-09-06 (`NotFound.jsx`)
 - [x] Favicon fallbacks (`favicon.ico`, `apple-touch-icon.png`) + delete unused `public/icons.svg` — done 2026-09-06 (regenerable via `frontend/scripts/generate-assets.mjs`; also removed unused `src/assets/hero.png` + `vite.svg`)
 - [x] `og:image` social share card + `robots.txt` — done 2026-09-06 (`public/og-image.png` 1200×630 with brand font; robots.txt disallows `/track/`; og:image URL must be made absolute at deploy)
-- [x] Error tracking → Sentry still open; frontend smoke test done 2026-09-06 (Playwright E2E, 5 tests)
+- [x] Frontend smoke test — done 2026-09-06 (Playwright E2E, 5 tests)
 - [x] Session security revisit — server-side invalidation done 2026-09-06 (password reset invalidates pre-reset JWTs via `sellers.token_invalid_before`)
 - [x] DB backups (SQLite era) — done 2026-09-06: `backend/scripts/backup_db.py` (daily 3:07 AM via Windows Task Scheduler "OrderKoi DB backup", keeps 14, WAL-safe)
+- [ ] **Real email provider** (Brevo/Resend free tier) — personal Gmail app password is not a production sender (500/day cap, spam risk); swap is a `.env` edit only
+- [ ] Error tracking — Sentry free tier (backend + frontend SDKs, DSN in `.env`)
+- [ ] Uptime monitoring (UptimeRobot/BetterStack free) pinging `/health` + `/ready`
+- [ ] Real domain + DNS; make `og:image` URL absolute in `index.html`
+
+## 🟠 Fast-follow hardening (Phase 8e — first weeks after launch)
+
+- [ ] Admin MFA (the admin account is the most powerful login)
+- [ ] Admin endpoint pagination (breaks only at hundreds of sellers)
+- [ ] Free-plan TOCTOU race fix (1-order edge case)
+- [ ] `month_orders` field rename (breaking API change — coordinate with frontend)
+- [ ] Load test before any marketing push
 
 ## 🟡 Product roadmap (post-launch)
 
@@ -82,7 +96,6 @@ _Last updated: 2026-09-06_
 - [ ] Bengali localization
 - [ ] Online payment gateway (bKash API instead of manual TrxID verification)
 - [ ] Seller account/data deletion (data protection)
-- [ ] Alembic migrations (replaces `create_all` + `scripts/migrate.py`)
 - [ ] Redis-backed rate limiting (needed only when running multiple backend workers)
 
 ---

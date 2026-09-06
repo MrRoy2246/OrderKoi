@@ -143,6 +143,21 @@ This is our roadmap from zero to production. **After every phase you get a testi
 
 ---
 
+## Phase 7.5–7.7 — Admin Panel, Plans & Password Reset ✅
+**Goal:** A platform owner account, free/Pro plans, and self-serve password recovery.
+
+**We built:**
+- **Admin as a pure platform account** (no shop of its own) — separate `/admin` panel: platform overview, sellers & plans management, upgrade request queue, subscription ledger
+- Free/Pro plans with expiry enforcement; admin can grant durations manually
+- **Forgot / reset password** flow — emailed reset links with 30-min single-use tokens
+- Admin routes return 403 for sellers/anonymous users (not discoverable)
+
+**✅ You test it yourself:**
+1. Log in as admin → `/admin` overview, sellers, requests pages all work; as a seller → `/admin` is blocked
+2. Forgot password → email link → set new password → old password rejected, new one works
+
+---
+
 ## Phase 7.8 — Public Order Form
 **Goal:** Customers order by themselves — no more retyping Messenger messages.
 
@@ -276,19 +291,114 @@ to the allowance.
 ---
 
 ## Phase 8 — Production Ready & Deployment
-**Goal:** Live on your domain.
+**Goal:** Live on your domain — with real email, backups, monitoring, and nothing that dies on day 2.
+
+Broken into sub-phases so progress stays trackable. Launch order was revised
+after the 2026-09-06 production-readiness audit: **code fixes first →
+PostgreSQL → Docker/deploy → launch guardrails → fast-follow hardening.**
+
+---
+
+### Phase 8a — Real SMTP Email ✅ (2026-09-06)
+
+**We built:**
+- All SMTP settings in `.env` (empty `SMTP_HOST` = console backend for tests/dev)
+- Signup → welcome + verification email (single-use 24h token; login blocked until verified; resend endpoint with anti-enumeration)
+- Customer emails: "order received" on public form submission + status-change email on every dashboard status advance
+- Sends moved to **background threads with retry/backoff** (3 attempts) — the API never waits on Gmail, and a failed send never breaks a request
+
+**✅ Verified:**
+- [x] Live SMTP end-to-end: signup → click email link → verified → login works
+- [x] Wrong/expired/consumed verification links give clean messages
+- [x] Order emails arrive for customer and on status changes
+- [x] 18 new tests (test_email_verification.py) — suite now 177/177
+
+---
+
+### Phase 8a+ — Pre-Deploy Hardening Batch ✅ (2026-09-06)
+
+The audit fixes that need **no Postgres and no Docker** — all landed:
+
+- [x] Password reset now **invalidates pre-reset JWTs** (`sellers.token_invalid_before` + `iat` claim)
+- [x] Per-account **login lockout**: 5 wrong passwords / 15 min → 15-min lock, IP-rotation-proof (`app/login_throttle.py`)
+- [x] **Security headers** middleware (nosniff, frame-deny, referrer, permissions)
+- [x] `/ready` DB-touching readiness probe (503 when the DB is down) alongside `/health`
+- [x] **Honeypot** on the public order form — bots get a fake success, nothing stored
+- [x] Frontend **404 page**, **Privacy Policy** + **Terms of Service** pages (landing footer links)
+- [x] Strong 64-hex dev `SECRET_KEY` (production gets a fresh one at deploy)
+- [x] **Playwright E2E smoke suite** — 5 tests: landing, 404, signup screen, login→dashboard, public order→tracking
+- [x] **DB backups**: `backend/scripts/backup_db.py` (WAL-safe, keeps 14) running daily 3:07 AM via Windows Task Scheduler
+- [x] **Public assets**: favicon.ico + apple-touch-icon fallbacks, 1200×630 og-image share card (brand font), robots.txt (disallows `/track/`) — regenerable via `frontend/scripts/generate-assets.mjs`
+- [x] Docs refreshed (BACKEND_GUIDE, FRONTEND_GUIDE), unused assets removed
+
+**✅ Verified:** backend 177/177 · Playwright 5/5 · build clean · backup integrity-checked while server live.
+
+---
+
+### Phase 8b — PostgreSQL Shift ⏳ (next)
+
+**Goal:** The production database, with money stored as exact decimals and real migrations.
 
 **We build:**
-- `.env` config for all secrets (nothing hardcoded)
-- PostgreSQL support (switch from SQLite with one env var)
-- Docker setup (backend + frontend)
-- Frontend production build
-- Step-by-step deployment guide for your domain + HTTPS
+- Add `psycopg[binary]` to requirements; switch `DATABASE_URL` to `postgresql+psycopg://…`
+- `Float` money columns → `Numeric(12,2)` (exact taka, no floating-point drift)
+- Rewrite SQLite-specific date SQL; verify aware/naive datetime handling against Postgres
+- Schema management for Postgres: fresh schema via `create_all`, adopt **Alembic** (replaces `scripts/migrate.py`, which is SQLite-only)
+- Decide: migrate existing dev data (pgloader / small script) or start clean
+- Run the full test suite against Postgres (SQLite for tests is acceptable)
+
+**✅ You test it yourself:**
+1. Backend starts against Postgres; signup → create order → track works
+2. Old JWTs still valid; login lockout still locks
+3. `pytest` green against the Postgres-backed app
+4. Stats/charts numbers match the SQLite run exactly
+
+---
+
+### Phase 8c — Dockerize & Deploy ⏳
+
+**Goal:** The whole stack in containers, HTTPS on your domain.
+
+**We build:**
+- `backend/Dockerfile` — Python slim, gunicorn + uvicorn workers (**1 worker** — rate limiter & login throttle are in-memory; Redis is the scale-out upgrade)
+- `frontend/Dockerfile` — node build stage with `VITE_API_URL` build arg, then nginx serving `dist/`
+- `docker-compose.yml` — backend + frontend + **Postgres with a volume** + **Caddy** reverse proxy (auto-TLS; CSP header gets set here)
+- `.dockerignore` files (venv, node_modules, dist must not bake into images)
+- Production `.env`: fresh strong `SECRET_KEY`, real `CORS_ORIGINS`, `FRONTEND_URL` = real domain, `ENVIRONMENT=production`
+- Bootstrap admin (`scripts/seed_admin.py`) with a strong password
+- **Nightly `pg_dump` backups to a second location** (a backup on the same disk is not a backup)
 
 **✅ You test it yourself:**
 1. `docker compose up` → whole stack runs in containers
-2. Full walkthrough: signup → create order → track order — on the deployed URL
-3. Share your tracking link with a friend → they see it working 🎉
+2. Full walkthrough on the deployed URL: signup → create order → track order
+3. HTTPS padlock works; email links point at the real domain
+4. Share your tracking link with a friend → they see it working 🎉
+
+---
+
+### Phase 8d — Launch Guardrails ⏳ (at/just before launch)
+
+Small items, mostly account signups — but without them you're flying blind:
+
+- [ ] **Real email provider** (Brevo/Resend free tier) — personal Gmail app password is not a production sender (500/day cap, spam-folder risk). Swap is a `.env` edit only
+- [ ] **Sentry** (free tier) — backend + frontend SDKs, DSN in `.env`; otherwise the first real bug is invisible
+- [ ] **Uptime monitoring** (UptimeRobot/BetterStack free) pinging `/health` + `/ready`, alerting your email/Telegram
+- [ ] Real **domain + DNS**
+- [ ] `og:image` URL made **absolute** in `index.html` (one line, once the domain exists)
+
+---
+
+### Phase 8e — Fast-Follow Hardening ⏳ (first weeks after launch)
+
+Safe to launch without; schedule soon after:
+
+- [ ] Admin **MFA** (the admin account is the most powerful login)
+- [ ] Admin endpoint **pagination** (breaks only at hundreds of sellers)
+- [ ] Free-plan **TOCTOU race** fix (1-order edge case)
+- [ ] `month_orders` field rename (breaking API change — coordinate with frontend)
+- [ ] **Redis-backed** rate limiting + login throttle (needed when running >1 worker)
+- [ ] **Load test** before any marketing push
+- [ ] Bengali localization, tracking auto-refresh, bKash API, seller self-serve deletion → product roadmap (post-launch)
 
 ---
 
@@ -301,6 +411,9 @@ to the allowance.
 | 3–5 | 1–2 sessions each |
 | 6 | 1 session |
 | 7 | 1 session |
-| 8 | 1 session + deployment |
+| 8a + 8a+ | ✅ done |
+| 8b | 1–2 sessions |
+| 8c + 8d | 1 session + deployment |
+| 8e | spread over the first weeks |
 
 After Phase 8 → **find 3 real sellers** to use it free for feedback. That's Phase 9 — the real world. 🚀
