@@ -335,17 +335,19 @@ The audit fixes that need **no Postgres and no Docker** — all landed:
 
 ---
 
-### Phase 8b — PostgreSQL Shift ⏳ (next)
+### Phase 8b — PostgreSQL Shift ✅ (2026-09-07)
 
-**Goal:** The production database, with money stored as exact decimals and real migrations.
+**Goal:** The production database, with real migrations.
 
-**We build:**
-- Add `psycopg[binary]` to requirements; switch `DATABASE_URL` to `postgresql+psycopg://…`
-- `Float` money columns → `Numeric(12,2)` (exact taka, no floating-point drift)
-- Rewrite SQLite-specific date SQL; verify aware/naive datetime handling against Postgres
-- Schema management for Postgres: fresh schema via `create_all`, adopt **Alembic** (replaces `scripts/migrate.py`, which is SQLite-only)
-- Decide: migrate existing dev data (pgloader / small script) or start clean
-- Run the full test suite against Postgres (SQLite for tests is acceptable)
+**We built:**
+- `psycopg[binary]` driver; dedicated `orderkoi` role + database on local PostgreSQL 17 (port **5433**); all credentials env-driven (`PG_*` vars compose the URL, `DATABASE_URL` overrides)
+- **Alembic** owns the schema (`backend/migrations/`, initial `faeac3112e6b`); startup `create_all` removed — fresh DB = `alembic upgrade head`
+- Existing dev data migrated id-preserving with sequence resets
+- **SQLite fully removed the same day:** no dialect branches, Postgres-native date expressions, aware datetimes end-to-end, legacy scripts deleted
+- Tests run on PostgreSQL in a dedicated `orderkoi_test` database — suite **187/187**; E2E and live endpoints verified against PG
+- `scripts/backup_db.py` → pg_dump custom format (Task Scheduler job unchanged)
+
+**Deferred (before/with 8c):** `Float` → `Numeric(12,2)` money columns — orthogonal to the DB shift, needs its own Alembic revision + Decimal handling.
 
 **✅ You test it yourself:**
 1. Backend starts against Postgres; signup → create order → track works
@@ -355,7 +357,22 @@ The audit fixes that need **no Postgres and no Docker** — all landed:
 
 ---
 
-### Phase 8c — Dockerize & Deploy ⏳
+### Phase 8b+ — Admin Bootstrap, Pre-Deploy Audit & Env-Driven Config ✅ (2026-09-07)
+
+**Goal:** Everything between "Postgres works" and "put it in containers" — plus the ability to change any offer without touching code.
+
+**We built:**
+- **`scripts/create_admin.py`** (replaced seed_admin + make_admin) — idempotent: `python -m scripts.create_admin <email> [password]`; sets `email_verified=True` (login gate), promotes existing accounts, 12+ char passwords
+- **Full pre-Docker audit** of backend + frontend: no code bugs found; dead code removed, gunicorn added; deploy gotchas captured (proxy headers, CSP, 1-worker)
+- **Repricing:** Pro = **৳350 / ৳1,750 / ৳2,900** (1/6/12 months) everywhere
+- **Env-driven business config:** `GET /public/stores/pricing` serves Pro prices, free-plan allowance, bKash number/type, support email — all from `.env` (`PRO_PRICE_1M/6M/12M`, `FREE_PLAN_ORDERS`, `BKASH_NUMBER`, `BKASH_TYPE`, `SUPPORT_EMAIL`), read per-request. Frontend fetches live with fallbacks (PlanSection, Dashboard, OrderFormModal, Terms, Privacy, AdminRequests). **Changing an offer = `.env` edit + backend restart — no rebuild, no deploy.**
+- **Comment/docstring sweep:** professional file-level docs across every backend module and frontend page
+
+**✅ Verified:** backend 189/189 · build + lint clean · live config endpoint checked · env-override test proves a flipped price flows end-to-end.
+
+---
+
+### Phase 8c — Dockerize & Deploy ⏳ (NEXT)
 
 **Goal:** The whole stack in containers, HTTPS on your domain.
 
@@ -365,7 +382,7 @@ The audit fixes that need **no Postgres and no Docker** — all landed:
 - `docker-compose.yml` — backend + frontend + **Postgres with a volume** + **Caddy** reverse proxy (auto-TLS; CSP header gets set here)
 - `.dockerignore` files (venv, node_modules, dist must not bake into images)
 - Production `.env`: fresh strong `SECRET_KEY`, real `CORS_ORIGINS`, `FRONTEND_URL` = real domain, `ENVIRONMENT=production`
-- Bootstrap admin (`scripts/seed_admin.py`) with a strong password
+- Bootstrap admin with a strong password (`python -m scripts.create_admin admin@yourdomain.com` — idempotent, account arrives email-verified)
 - **Nightly `pg_dump` backups to a second location** (a backup on the same disk is not a backup)
 
 **✅ You test it yourself:**
@@ -412,7 +429,7 @@ Safe to launch without; schedule soon after:
 | 6 | 1 session |
 | 7 | 1 session |
 | 8a + 8a+ | ✅ done |
-| 8b | 1–2 sessions |
+| 8b + 8b+ | ✅ done (2026-09-07) |
 | 8c + 8d | 1 session + deployment |
 | 8e | spread over the first weeks |
 

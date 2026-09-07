@@ -17,7 +17,7 @@ OrderKoi is an order-tracking platform for small online sellers (F-commerce / Fa
 - 🔗 Public tracking page: customer checks status via a link + tracking code
 - 📝 Public order form: customers submit orders themselves — no login, no Messenger retyping
 - 📊 Analytics: order counts, status breakdown, revenue (all scoped by date range)
-- 💳 Free plan (15 orders, one time) → Pro (unlimited; 1/6/12 months, bKash)
+- 💳 Free plan (15 orders, one time) → Pro (unlimited; 1/6/12 months, bKash) — **all prices and business values served live from the backend env, changeable without a deploy**
 - 🔐 Secure JWT authentication
 
 ## Tech Stack
@@ -54,8 +54,9 @@ OrderKoi is an order-tracking platform for small online sellers (F-commerce / Fa
 - [x] Phase 8a — Real SMTP email: verification, order & status emails, background send with retry (2026-09-06)
 - [x] Phase 8a+ — Pre-deploy hardening: JWT invalidation on reset, login lockout, security headers, /ready, honeypot, 404, Privacy/Terms, Playwright E2E, daily DB backups, favicon/og-image/robots.txt (2026-09-06)
 - [x] Phase 8b — PostgreSQL shift: dedicated orderkoi DB + env-driven credentials, Alembic migrations, dev data migrated, pg_dump backups, SQLite fully removed incl. tests-on-PG (2026-09-07)
-- [ ] Phase 8c — Dockerize & deploy (after 8b)
+- [x] Phase 8b+ — create_admin bootstrap script, pre-deploy audit, gunicorn; Pro repriced ৳350/৳1,750/৳2,900; all business values env-driven via public config endpoint (no rebuild to change an offer); full docstring sweep (2026-09-07)
+- [ ] Phase 8c — Dockerize & deploy (next)
 - [ ] Phase 8d — Launch guardrails: real email provider, Sentry, uptime monitoring, domain
 - [ ] Phase 8e — Fast-follow hardening: admin MFA, pagination, Redis limiter, load test
 
-**Test health:** backend 177/177 · Playwright E2E 5/5 · build + lint clean.
+**Test health:** backend 189/189 · Playwright E2E 5/5 · build + lint clean.

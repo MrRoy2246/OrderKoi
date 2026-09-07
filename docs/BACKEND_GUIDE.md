@@ -31,13 +31,15 @@ pip install -r requirements.txt
 ## Running the server
 
 ```bash
-uvicorn app.main:app
+uvicorn app.main:app            # dev
+gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w 1   # production (gunicorn is in requirements.txt)
 ```
 
 - API base URL: `http://localhost:8000`
 - **Swagger UI (interactive docs):** `http://localhost:8000/docs` ← your main testing tool
 - ReDoc docs: `http://localhost:8000/redoc`
 - Health check: `http://localhost:8000/health` (liveness) · `http://localhost:8000/ready` (checks the DB too — returns 503 if the DB is down)
+- Public business config: `http://localhost:8000/public/stores/pricing` (env-driven prices/allowance/bKash/support — see the Business config section)
 
 > ⚠️ **On this machine, do NOT use `--reload` — it hangs.** Run the plain command above and restart the server manually after every backend edit.
 
@@ -62,8 +64,20 @@ pytest
 - Dev: **PostgreSQL 17** (local install, port **5433** — PG 15 owns 5432). Dedicated `orderkoi` role + database; the app never uses the postgres superuser.
 - All connection settings live in `.env` (`PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`) — change the user, password, host, or port there and the app follows, no code change. A full `DATABASE_URL` overrides the parts; one of the two must be set (the app refuses to boot without a database).
 - Schema is managed by **Alembic**: set up or update a database with `alembic upgrade head` (from `backend/`). After changing a model in `app/models.py`, generate a migration with `alembic revision --autogenerate -m "..."`, review it, then `upgrade head`.
-- Free plan: one-time 15-order allowance, configured via `free_plan_orders` in `app/config.py` (defaults from `.env`)
 - Tests run on the same engine as production, in a dedicated **`orderkoi_test`** database (selected via `PG_DATABASE` env override in `tests/conftest.py`; auto-created on first run — needs `CREATEDB` on the role, granted once: `ALTER ROLE orderkoi CREATEDB;`). Dev data is never touched; the schema is created/dropped per session.
+
+## Business config (prices, allowance, bKash, contact) — all env-driven
+
+Every public business value lives in `.env` and is served live by **`GET /public/stores/pricing`** (no auth):
+
+| Env var | Default | Controls |
+|---|---|---|
+| `PRO_PRICE_1M / PRO_PRICE_6M / PRO_PRICE_12M` | 350 / 1750 / 2900 | Pro plan prices (frontend plan cards, upgrade request amount, admin revenue math) |
+| `FREE_PLAN_ORDERS` | 15 | One-time free-plan allowance |
+| `BKASH_NUMBER` / `BKASH_TYPE` | 01736060259 / Personal | Payment instructions shown to sellers |
+| `SUPPORT_EMAIL` | abinroy510@gmail.com | Contact email on the Terms & Privacy pages |
+
+**To change any offer: edit `.env`, restart the backend.** No rebuild, no frontend deploy — the frontend fetches this endpoint at runtime (with safe fallbacks if the backend is unreachable or stale). The endpoint reads settings per-request, so env changes apply on restart. Prices feed `app/schemas.py:pro_prices()` (used by orders/auth/admin routes); admin revenue figures re-price ledger events at the *current* rates — a price change shifts those totals (accepted, documented behavior).
 
 ## Backups
 
@@ -96,7 +110,7 @@ python -m scripts.backup_db        # from backend/ — also run by Task Schedule
 backend/
 ├── app/
 │   ├── main.py        # FastAPI app, routes registration, CORS, security headers, /health + /ready
-│   ├── config.py      # Settings from .env (incl. free_plan_orders = 15)
+│   ├── config.py      # Settings from .env (business config: prices, allowance, bKash, support email)
 │   ├── database.py    # DB engine & session (PostgreSQL pool, UTC-pinned sessions)
 │   ├── email.py       # SMTP send — background threads + retry, console fallback
 │   ├── emails.py      # Email templates (welcome/verify, reset, order received, status change)
@@ -112,13 +126,13 @@ backend/
 │       ├── orders.py  # /orders CRUD + status changes + /orders/stats/summary (free-allowance gate)
 │       ├── tracking.py# /track/{code} — public
 │       ├── admin.py   # /admin/* — stats, sellers, upgrade requests, subscription events
-│       └── public.py  # /public/stores/{slug} — order form + is_accepting_orders (honeypot)
+│       └── public.py  # /public/stores/{slug} + /public/stores/pricing (env-driven business config; honeypot)
 ├── scripts/
 │   ├── create_admin.py # Bootstrap/promote the platform admin (idempotent) - run after alembic upgrade head on a fresh DB
 │   ├── backup_db.py   # Timestamped pg_dump backup (keep 14) - runs daily via Task Scheduler
 │   └── audit_probe.py # Manual audit helpers
 ├── backups/           # Backup output (gitignored)
-├── tests/             # pytest suite (177 tests)
+├── tests/             # pytest suite (189 tests)
 ├── requirements.txt
 ├── .env.example       # Template for secrets — copy to .env
 └── venv/              # Virtual environment (never commit)

@@ -1,16 +1,32 @@
-# React + Vite
+# OrderKoi Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+The seller dashboard, public order form, and tracking pages for OrderKoi —
+React 19 + Vite, plain JavaScript, custom CSS design system ("koi vermilion on
+warm paper"). Talks to the FastAPI backend (default `http://localhost:8000`).
 
-Currently, two official plugins are available:
+Full guide: **[../docs/FRONTEND_GUIDE.md](../docs/FRONTEND_GUIDE.md)** — setup,
+routes, testing, project layout, troubleshooting.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Quick start
 
-## React Compiler
+```bash
+npm install     # once
+npm run dev     # http://localhost:5173 — backend must be running on :8000
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Commands
 
-## Expanding the Oxlint configuration
+| Command | What it does |
+|---|---|
+| `npm run dev` | Dev server with hot reload |
+| `npm run build` | Production build → `dist/` (what gets deployed) |
+| `npm run preview` | Serve the build locally |
+| `npm run lint` | Oxlint |
+| `npx playwright test` | E2E smoke suite (5 tests; dev servers must be running) |
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+## Notes for this project
+
+- **API base is baked at build time** (`VITE_API_URL` build arg → `src/api/client.js`) — dev uses the Vite proxy.
+- **Business config is live, not baked**: prices, free-plan allowance, bKash details, and support email are fetched from `GET /public/stores/pricing` at runtime via `src/utils/proPricing.js`. Changing an offer = backend `.env` edit + restart; no frontend rebuild.
+- E2E runs single-worker (`workers: 1`) — the dev backend rate-limits by IP.
+- Design tokens, components, and all styles live in `src/index.css`.

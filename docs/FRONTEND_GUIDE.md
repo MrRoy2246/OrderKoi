@@ -45,6 +45,10 @@ npm run dev
 | `/privacy`, `/terms` | Privacy Policy & Terms of Service | Everyone |
 | anything else | 404 page | Everyone |
 
+## Live business config (prices, allowance, bKash, contact)
+
+Pro prices, the free-plan allowance, bKash details, and the support email are **not hard-coded**: `src/utils/proPricing.js` fetches `GET /public/stores/pricing` at runtime (module-level cache, fallbacks if the backend is down) and exposes `getProOptions()`, `proPriceFor(months)`, `getFreePlanOrders()`, `getBkash()`, `getSupportEmail()`. Pages call `fetchPublicConfig()` on mount, then bump a state counter to re-render once it lands. **Offers change in `backend/.env` + backend restart — no frontend rebuild.** If you add a new business value: extend `PublicConfigOut` (backend) → the fallback object in `proPricing.js` → a getter → consumers.
+
 ## Production build
 
 ```bash
@@ -87,7 +91,7 @@ frontend/
 │   ├── auth/AuthContext.jsx  # Token storage, login state (signup does NOT auto-login — email must be verified first)
 │   ├── pages/             # One file per page (dashboard, orders, settings, admin/*, public form, tracking, verify-email, legal, 404)
 │   ├── components/        # Reusable UI (badges, meters, modals, charts, skeletons)
-│   └── utils/             # Date/business-time, order formatting, hooks
+│   └── utils/             # Date/business-time, order formatting, live business config (proPricing.js), hooks
 ├── e2e/                   # Playwright smoke tests (smoke.spec.js)
 ├── scripts/
 │   └── generate-assets.mjs  # Regenerates favicon.ico / apple-touch-icon / og-image from the SVG logo

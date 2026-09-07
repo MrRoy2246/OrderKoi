@@ -1,6 +1,6 @@
 # OrderKoi Audit Report
 
-**Date:** 1 September 2026
+**Date:** 1 September 2026 — *historical document: every P0/P1/P2 item it recommended has since landed (Phase 7.x remediations + Phase 8a/8a+/8b/8b+); the P3 list is the post-launch roadmap in ORDERKOI_STATUS.md. A fresh pre-Docker audit (2026-09-07, no findings) is summarized in ORDERKOI_STATUS.md.*
 **Scope:** Full codebase review (backend + frontend), live API security probing, database inspection, test-suite review, UX/product analysis.
 **Method:** Every backend and frontend file was read. Live probes were run against the running dev server (auth edge cases, JWT tampering, IDOR, privilege escalation, injection, validation, rate limits, concurrency). The full backend suite (103 tests) and the frontend production build were executed.
 
