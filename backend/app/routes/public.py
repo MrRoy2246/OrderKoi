@@ -30,11 +30,31 @@ from app.routes.orders import (
     _check_plan_limit,
     _lifetime_order_count,
 )
-from app.schemas import PublicOrderCreate, PublicOrderCreated, PublicStoreOut
+from app.schemas import (
+    PricingOut,
+    PublicOrderCreate,
+    PublicOrderCreated,
+    PublicStoreOut,
+    pro_prices,
+)
 
 router = APIRouter(prefix="/public/stores", tags=["public"])
 
 settings = get_settings()
+
+
+@router.get(
+    "/pricing",
+    response_model=list[PricingOut],
+    summary="Pro plan pricing (public, env-driven)",
+)
+def get_pricing() -> list[PricingOut]:
+    """One entry per Pro duration, newest info from .env. The frontend
+    (Settings pricing cards, admin's expected-payment verification)
+    reads this live — change a price in .env, restart, done. Prices are
+    public by nature: sellers see them before logging in."""
+    prices = pro_prices()
+    return [PricingOut(months=months, price=prices[months]) for months in (1, 6, 12)]
 
 
 def _get_store(slug: str, db: Session) -> Seller:

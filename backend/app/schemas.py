@@ -152,11 +152,30 @@ class PlanUpdate(BaseModel):
     comp: bool = False
 
 
-# Pro prices — single source of truth for the backend. Must stay in
-# sync with frontend/src/utils/proPricing.js (the frontend shows the
-# same numbers to sellers). Used to compute subscription revenue from
-# the ledger's months.
-PRO_PRICES = {1: 350, 6: 1750, 12: 2900}
+# Pro prices — served to the frontend at GET /pricing and used to
+# compute subscription revenue from the ledger's months. The values
+# come from .env (PRO_PRICE_1M/6M/12M) with the current defaults below,
+# so a price change is an .env edit + restart: no code, no frontend
+# rebuild. Admins must set all three together (the durations are the
+# plan structure; a missing value falls back to the default).
+class PricingOut(BaseModel):
+    """Public pricing — one entry per Pro duration."""
+
+    months: Literal[1, 6, 12]
+    price: int
+
+
+from app.config import get_settings  # noqa: E402 — after the class, for clarity
+
+
+def pro_prices() -> dict[int, int]:
+    """{months: price} from the current settings (env-overridable)."""
+    settings = get_settings()
+    return {
+        1: settings.pro_price_1m,
+        6: settings.pro_price_6m,
+        12: settings.pro_price_12m,
+    }
 
 
 # ---------- Upgrade requests ----------

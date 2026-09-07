@@ -3,7 +3,7 @@ import { useAuth } from "../auth/AuthContext";
 import { api, getErrorMessage } from "../api/client";
 import Icon from "./icons";
 import { parseServerDate } from "../utils/orderStatus";
-import { PRO_OPTIONS } from "../utils/proPricing";
+import { fetchProOptions, PRO_OPTIONS_FALLBACK } from "../utils/proPricing";
 
 /** Where sellers send payment. */
 const PAYMENT_INSTRUCTIONS =
@@ -61,6 +61,19 @@ export default function PlanSection() {
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [proOptions, setProOptions] = useState(PRO_OPTIONS_FALLBACK);
+
+  // Live prices from the backend (env-driven there) — fallback keeps
+  // the card rendered if the fetch fails
+  useEffect(() => {
+    let cancelled = false;
+    fetchProOptions().then((options) => {
+      if (!cancelled) setProOptions(options);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const fetchRequests = useCallback(() => {
     api.auth
@@ -82,7 +95,7 @@ export default function PlanSection() {
   const proActive =
     seller?.plan === "pro" &&
     (!seller?.plan_expires_at || new Date(seller.plan_expires_at) > new Date());
-  const chosen = PRO_OPTIONS.find((o) => o.months === selected);
+  const chosen = proOptions.find((o) => o.months === selected) ?? proOptions[0];
 
   // One timeline: upgrade requests + subscription events (activation,
   // renewal, cancellation), newest first. An approved request and its
@@ -226,7 +239,7 @@ export default function PlanSection() {
       {!proActive || seller?.plan_expires_at ? (
         <>
           <div className="plan-options">
-            {PRO_OPTIONS.map((option) => (
+            {proOptions.map((option) => (
               <button
                 key={option.months}
                 type="button"

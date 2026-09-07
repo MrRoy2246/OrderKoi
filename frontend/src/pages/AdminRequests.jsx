@@ -7,7 +7,7 @@ import {
   formatTk,
   parseServerDate,
 } from "../utils/orderStatus";
-import { proPriceFor } from "../utils/proPricing";
+import { proPriceFor, fetchProOptions } from "../utils/proPricing";
 
 const STATUS_META = {
   pending: { label: "Pending", className: "upgrade-status--pending" },
@@ -64,6 +64,8 @@ export default function AdminRequests() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  // Bump when live prices land so expected-amount figures re-render
+  const [pricingVersion, setPricingVersion] = useState(0);
 
   const fetchRequests = useCallback(() => {
     api.admin
@@ -76,6 +78,12 @@ export default function AdminRequests() {
       .subscriptionEvents()
       .then(setEvents)
       .catch(() => setEvents([])); // the ledger is supplementary
+  }, []);
+
+  // Live prices (env-driven on the backend) for the "should have paid"
+  // verification figures — recompute when they arrive
+  useEffect(() => {
+    fetchProOptions().then(() => setPricingVersion((v) => v + 1));
   }, []);
 
   useEffect(() => {
@@ -96,9 +104,11 @@ export default function AdminRequests() {
   }
 
   const pending = requests.filter((r) => r.status === "pending");
-  const expectedTotal = pending.reduce(
-    (sum, r) => sum + (proPriceFor(r.months) ?? 0),
-    0
+  // Live prices load async — this memo recomputes the moment they land
+  // (pricingVersion bumps) so the expected-payment figures are current
+  const expectedTotal = useMemo(
+    () => pending.reduce((sum, r) => sum + (proPriceFor(r.months) ?? 0), 0),
+    [pending, pricingVersion]
   );
 
   // Store history grouped — one row per shop, holding BOTH its requests

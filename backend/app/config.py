@@ -68,6 +68,14 @@ class Settings(BaseSettings):
     # the override path.
     free_plan_orders: int = 15
 
+    # Pro prices per duration (taka). Env-driven so a price change is
+    # an .env edit + restart — no code, no frontend rebuild: the
+    # backend serves them at GET /pricing and both UIs follow. Change
+    # one duration only if you want (e.g. run an offer on 1 month).
+    pro_price_1m: int = 350
+    pro_price_6m: int = 1750
+    pro_price_12m: int = 2900
+
     # Password reset
     frontend_url: str = "http://localhost:5173"
     reset_token_expire_minutes: int = 30

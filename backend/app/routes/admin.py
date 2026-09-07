@@ -36,9 +36,9 @@ from app.schemas import (
     ChartBucket,
     DailyCount,
     PlanUpdate,
-    PRO_PRICES,
     RecentSignupOut,
     UpgradeRequestAction,
+    pro_prices,
 )
 from app.timezone import (
     business_day,
@@ -65,11 +65,13 @@ def _add_months(moment: datetime, months: int) -> datetime:
 def _subscription_revenue(db: Session, since: datetime | None = None) -> float:
     """Total money sellers paid for Pro — comp (free) grants excluded.
 
-    Each paid ledger entry's months map to a price from PRO_PRICES;
-    entries with an unknown duration (data oddities) contribute nothing.
-    `since` (aware UTC) limits the sum to recent entries, e.g. the
-    30-day pulse.
+    Each paid ledger entry's months map to a price from the current
+    settings (env-driven — GET /pricing shows the same numbers);
+    entries with an unknown duration (data oddities) contribute
+    nothing. `since` (aware UTC) limits the sum to recent entries,
+    e.g. the 30-day pulse.
     """
+    prices = pro_prices()
     query = db.query(SubscriptionEvent.months).filter(
         SubscriptionEvent.event.in_(["subscribed", "renewed"]),
         SubscriptionEvent.comp.is_(False),
@@ -77,7 +79,7 @@ def _subscription_revenue(db: Session, since: datetime | None = None) -> float:
     )
     if since is not None:
         query = query.filter(SubscriptionEvent.created_at >= since)
-    return float(sum(PRO_PRICES.get(months, 0) for (months,) in query.all()))
+    return float(sum(prices.get(months, 0) for (months,) in query.all()))
 
 
 @router.get(
@@ -224,11 +226,12 @@ def platform_stats(
         )
         .all()
     )
+    prices = pro_prices()
     sub_month_map: dict[str, float] = {}
     sub_month_count_map: dict[str, int] = {}
     for created_at, months in paid_events:
         key = to_business_time(created_at).strftime("%Y-%m")
-        sub_month_map[key] = sub_month_map.get(key, 0.0) + PRO_PRICES.get(months, 0)
+        sub_month_map[key] = sub_month_map.get(key, 0.0) + prices.get(months, 0)
         sub_month_count_map[key] = sub_month_count_map.get(key, 0) + 1
 
     # ---- Chart series (business-timezone buckets, oldest first) ----
@@ -313,7 +316,7 @@ def platform_stats(
         for created_at, months in paid_events:
             if window_start_dt <= created_at < window_end_dt:
                 key = to_business_time(created_at).strftime("%Y-%m-%d")
-                sub_day_map[key] = sub_day_map.get(key, 0.0) + PRO_PRICES.get(months, 0)
+                sub_day_map[key] = sub_day_map.get(key, 0.0) + prices.get(months, 0)
                 sub_day_count_map[key] = sub_day_count_map.get(key, 0) + 1
 
         # Shared series of day keys — one pass builds all three series
