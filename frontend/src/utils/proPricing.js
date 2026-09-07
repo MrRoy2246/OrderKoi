@@ -5,9 +5,9 @@
  * statement). Edit here and both stay in sync.
  */
 export const PRO_OPTIONS = [
-  { months: 1, price: 399, note: "try Pro out" },
-  { months: 6, price: 1999, note: "save 16%" },
-  { months: 12, price: 3299, note: "save 31%" },
+  { months: 1, price: 350, note: "try Pro out" },
+  { months: 6, price: 1750, note: "save 17%" },
+  { months: 12, price: 2900, note: "save 31%" },
 ];
 
 /** The price a seller should have paid for a given duration. */

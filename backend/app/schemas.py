@@ -156,7 +156,7 @@ class PlanUpdate(BaseModel):
 # sync with frontend/src/utils/proPricing.js (the frontend shows the
 # same numbers to sellers). Used to compute subscription revenue from
 # the ledger's months.
-PRO_PRICES = {1: 399, 6: 1999, 12: 3299}
+PRO_PRICES = {1: 350, 6: 1750, 12: 2900}
 
 
 # ---------- Upgrade requests ----------

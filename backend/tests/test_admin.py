@@ -289,7 +289,7 @@ def test_paid_activation_counts_in_subscription_revenue(client, admin_headers, s
         headers=admin_headers,
     )
     stats = client.get("/admin/stats", headers=admin_headers).json()
-    assert stats["subscription_revenue_total"] == before["subscription_revenue_total"] + 399
+    assert stats["subscription_revenue_total"] == before["subscription_revenue_total"] + 350
 
 
 def test_comp_default_false_and_cumulative_revenue(client, admin_headers, seller):
@@ -305,7 +305,7 @@ def test_comp_default_false_and_cumulative_revenue(client, admin_headers, seller
     assert mine and mine[0]["comp"] is False
 
     stats = client.get("/admin/stats", headers=admin_headers).json()
-    assert stats["subscription_revenue_total"] == before["subscription_revenue_total"] + 3299
+    assert stats["subscription_revenue_total"] == before["subscription_revenue_total"] + 2900
 
 
 # ---------- Stats: chart series ----------
@@ -455,7 +455,7 @@ def test_subscription_monthly_tracks_paid_grants(client, admin_headers, seller):
     # Today's bucket gained only the paid 6-month price
     assert (
         stats["subscription_monthly"][-1]["value"]
-        == before["subscription_monthly"][-1]["value"] + 1999
+        == before["subscription_monthly"][-1]["value"] + 1750
     )
     # And the total agrees with the month series sum
     assert stats["subscription_revenue_total"] >= sum(
@@ -478,7 +478,7 @@ def test_platform_stats_comp_revenue_mixed(client, admin_headers, seller):
     )
     stats = client.get("/admin/stats", headers=admin_headers).json()
     # only the paid month, not the comped 6 months
-    assert stats["subscription_revenue_total"] == before["subscription_revenue_total"] + 399
+    assert stats["subscription_revenue_total"] == before["subscription_revenue_total"] + 350
 
 
 # ---------- Seller stats: daily revenue series ----------
