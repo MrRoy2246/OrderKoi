@@ -33,9 +33,9 @@ from app.schemas import (
     StatsSummary,
 )
 from app.timezone import (
+    BusinessDay,
     business_today,
     day_bounds_utc,
-    sqlite_shift_modifiers,
     to_business_time,
 )
 
@@ -434,11 +434,12 @@ def stats_summary(
     )
 
     # Group by the *business-local* date: an order at 20:00 UTC is
-    # 02:00 next day in Dhaka and belongs on that day's bar. SQLite
-    # date() modifiers do the shift in SQL (no per-row Python).
+    # 02:00 next day in Dhaka and belongs on that day's bar. The
+    # BusinessDay construct compiles the shift into SQL for the active
+    # dialect (no per-row Python).
     # Revenue rides along so the same series powers a money chart —
     # cancelled orders count toward nothing (no bar, no money).
-    day_expr = func.date(Order.created_at, *sqlite_shift_modifiers())
+    day_expr = BusinessDay(Order.created_at)
     daily_rows = (
         db.query(
             day_expr,

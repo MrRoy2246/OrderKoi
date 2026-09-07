@@ -42,11 +42,13 @@ from app.schemas import (
     UpgradeRequestAction,
 )
 from app.timezone import (
+    BusinessDay,
+    BusinessMonth,
+    as_naive_utc,
     business_now,
     business_today,
     business_tz,
     day_bounds_utc,
-    sqlite_shift_modifiers,
     to_business_time,
 )
 
@@ -215,7 +217,6 @@ def platform_stats(
     # Monthly paid-Pro money (spans the selected window, capped at 12
     # months — the "your earnings" chart). Comp grants excluded, priced
     # per entry.
-    sub_month_expr = func.strftime("%Y-%m", SubscriptionEvent.created_at, *sqlite_shift_modifiers())
     paid_events = (
         db.query(SubscriptionEvent.created_at, SubscriptionEvent.months)
         .filter(
@@ -236,7 +237,7 @@ def platform_stats(
 
     # Orders per day, over the window chosen above (7 / 30 / 90-day
     # presets or a custom range — the dashboard's range filter).
-    day_expr = func.date(Order.created_at, *sqlite_shift_modifiers())
+    day_expr = BusinessDay(Order.created_at)
     daily_rows = (
         db.query(
             day_expr,
@@ -296,7 +297,7 @@ def platform_stats(
             str(day): (int(count), round(float(total), 2))
             for day, count, total in gmv_daily_rows
         }
-        signup_day_expr = func.date(Seller.created_at, *sqlite_shift_modifiers())
+        signup_day_expr = BusinessDay(Seller.created_at)
         signup_day_rows = (
             db.query(signup_day_expr, func.count(Seller.id))
             .filter(
@@ -312,7 +313,7 @@ def platform_stats(
         sub_day_map: dict[str, float] = {}
         sub_day_count_map: dict[str, int] = {}
         for created_at, months in paid_events:
-            if window_start_dt <= created_at < window_end_dt:
+            if window_start_dt <= as_naive_utc(created_at) < window_end_dt:
                 key = to_business_time(as_aware(created_at)).strftime("%Y-%m-%d")
                 sub_day_map[key] = sub_day_map.get(key, 0.0) + PRO_PRICES.get(months, 0)
                 sub_day_count_map[key] = sub_day_count_map.get(key, 0) + 1
@@ -370,7 +371,7 @@ def platform_stats(
             .astimezone(timezone.utc)
             .replace(tzinfo=None)
         )
-        month_expr = func.strftime("%Y-%m", Order.created_at, *sqlite_shift_modifiers())
+        month_expr = BusinessMonth(Order.created_at)
         gmv_rows = (
             db.query(
                 month_expr,
@@ -389,7 +390,7 @@ def platform_stats(
             for month, count, total in gmv_rows
         }
 
-        seller_month_expr = func.strftime("%Y-%m", Seller.created_at, *sqlite_shift_modifiers())
+        seller_month_expr = BusinessMonth(Seller.created_at)
         signup_rows = (
             db.query(seller_month_expr, func.count(Seller.id))
             .filter(
@@ -510,7 +511,7 @@ def seller_shop_stats(
 
     # Daily buckets with revenue (business-local days, full window —
     # quiet days show as zero so the chart keeps its shape)
-    day_expr = func.date(Order.created_at, *sqlite_shift_modifiers())
+    day_expr = BusinessDay(Order.created_at)
     daily_rows = (
         db.query(
             day_expr,

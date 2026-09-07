@@ -10,7 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.database import Base, engine, get_db
+from app.database import get_db
 from app.rate_limit import enforce_rate_limits
 from app.routes import admin, auth, orders, public, tracking
 
@@ -44,10 +44,14 @@ def _validate_production_config() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create database tables on startup (dev convenience; Alembic
-    migrations replace this in Phase 8)."""
+    """Boot checks only — the schema is owned by Alembic migrations.
+
+    To set up (or update) a database:
+        cd backend && alembic upgrade head
+    (Alembic reads DATABASE_URL / PG_* from .env — same source of
+    truth as the app.)
+    """
     _validate_production_config()
-    Base.metadata.create_all(bind=engine)
     yield
 
 

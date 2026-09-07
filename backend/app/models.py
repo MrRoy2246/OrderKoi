@@ -16,7 +16,8 @@ def utcnow() -> datetime:
 
 
 def as_aware(value: datetime) -> datetime:
-    """SQLite returns naive datetimes — normalize before comparing."""
+    """Normalize a stored timestamp before comparing — SQLite returns
+    naive datetimes, PostgreSQL (timestamptz) returns aware ones."""
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
 

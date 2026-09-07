@@ -1,6 +1,6 @@
 # OrderKoi — Project Status
 
-_Last updated: 2026-09-06_
+_Last updated: 2026-09-07_
 
 ## ✅ Completed
 
@@ -29,10 +29,11 @@ _Last updated: 2026-09-06_
 | **Admin overview KPI scoping (2026-09-05)**       | All six admin KPI cards now follow the global date filter — window-scoped figures summed from the same series the charts plot; all-time context lives in the hint line. |
 | **Full email system (2026-09-06)**                | Every account/email-touching event now sends real mail via `app/emails.py` templates + SMTP from `backend/.env`: signup welcome+verification (single-use 24h token, login blocked until verified, resend endpoint w/ anti-enumeration), password reset (already existed), customer "order received" on public form submission, and customer status-change emails on every dashboard status advance. Existing accounts backfilled `email_verified=1`. Switching senders = edit `.env` only. |
 | **Pre-deploy hardening batch (2026-09-06)**       | Audit remediations that don't need Postgres/Docker: SMTP sends moved to background threads with retry+backoff (API responses no longer wait on Gmail); password reset now invalidates pre-reset JWTs (`sellers.token_invalid_before` + `iat` claim — `scripts/migrate.py` adds the column); per-account login lockout (5 fails / 15 min → 15 min lock, `app/login_throttle.py`, IP-rotation-proof); security headers middleware (nosniff/DENY/referrer/permissions); `/ready` DB-touching readiness probe; public-form honeypot (bots get fake 201, nothing stored); frontend 404 page; Privacy Policy + Terms pages (linked from landing footer); strong 64-hex dev `SECRET_KEY`; Playwright E2E smoke (5 tests: landing, 404, signup screen, login→dashboard, public order→tracking). Backend 177/177. |
+| **Phase 8b — PostgreSQL shift (2026-09-07)**      | Dev database moved from SQLite to local **PostgreSQL 17.4** (port 5433; PG 15 owns 5432). All DB credentials in `backend/.env` via `PG_*` vars (`PG_HOST/PORT/DATABASE/USER/PASSWORD`) that compose into the URL — a full `DATABASE_URL` overrides; nothing set = legacy SQLite fallback. Dedicated `orderkoi` role + database (no superuser in the app). Driver `psycopg[binary]` (psycopg3); engine pools connections, `pool_pre_ping`, session pinned to `TimeZone=UTC` so naive-UTC bounds compare exactly. **Alembic adopted** (`backend/migrations/`, initial schema `faeac3112e6b`); `create_all` removed from startup — schema changes are `alembic revision --autogenerate` + `upgrade head`; `scripts/migrate.py` is now SQLite-only legacy. Date-grouping SQL made dialect-portable: `BusinessDay`/`BusinessMonth` constructs (`app/timezone.py`) compile to `date()/strftime()` on SQLite and `AT TIME ZONE`/`TO_CHAR` on Postgres. Aware/naive datetime handling fixed for timestamptz (`to_business_time` + new `as_naive_utc`). Existing dev data migrated id-preserving with sequence resets (`scripts/sqlite_to_postgres.py`; 332 rows — 14 sellers, 228 orders). `scripts/backup_db.py` now pg_dumps when DATABASE_URL is Postgres (finds pg_dump via `PG_BINDIR`/PATH/standard install; the 3:07 AM task needs no change). Backend tests **188/188** (11 new dialect-portability tests); Playwright E2E 5/5 against the PG-backed dev servers; live-verified login, seller stats, admin stats (daily + monthly paths), CSV export, order writes, public tracking, pg_dump backup. |
 
-**Current state:** fully working product on dev servers. Backend tests 177/177. Playwright E2E smoke 5/5 (`frontend/e2e/smoke.spec.js` — dev servers must be running: `npx playwright test`). Frontend build + lint clean. Gmail SMTP live (app password in `backend/.env`, sends are background now).
+**Current state:** fully working product on dev servers, now on PostgreSQL 17. Backend tests 188/188. Playwright E2E smoke 5/5 (`frontend/e2e/smoke.spec.js` — dev servers must be running: `npx playwright test`). Frontend build + lint clean. Gmail SMTP live (app password in `backend/.env`, sends are background now).
 
-**Agreed launch order (revised 2026-09-06 after the production-readiness audit):** ① pre-deploy code fixes (DONE — see hardening batch above) → ② shift to PostgreSQL (in a few days) → ③ Dockerize + deploy after ① and ② are verified.
+**Agreed launch order (revised 2026-09-06):** ① pre-deploy code fixes (DONE — see hardening batch above) → ② shift to PostgreSQL (DONE 2026-09-07 — see Phase 8b row) → ③ Dockerize + deploy after ② is verified.
 
 ---
 
@@ -44,15 +45,17 @@ _Last updated: 2026-09-06_
 - [x] Backend tests 165/165 incl. 18 new email tests (`test_email_verification.py` + additions).
 - [x] ~~**← waiting on user:** Gmail app password~~ DONE 2026-09-06 — live SMTP verified end-to-end (signup+verify, login gate, resend, order emails).
 
-## 🔴 Phase 8b — PostgreSQL shift (next — user said "in a few days")
+## ✅ Phase 8b — PostgreSQL shift (DONE 2026-09-07)
 
-- [ ] Add `psycopg[binary]` to `backend/requirements.txt`
-- [ ] Change `DATABASE_URL` to `postgresql+psycopg://…` in `.env` (config already supports it — `app/database.py` only special-cases `sqlite://` URLs)
-- [ ] `Float` money columns → `Numeric(12,2)` (exact taka — no floating-point drift)
-- [ ] Rewrite SQLite-specific date SQL; verify the aware/naive datetime handling against Postgres (SQLite returns naive datetimes; Postgres with `DateTime(timezone=True)` returns aware — `as_aware()` and the timezone helpers must still line up)
-- [ ] Run the full test suite against Postgres (tests currently use in-memory SQLite — decide whether to keep SQLite for tests, which is fine)
-- [ ] Adopt Alembic for schema management on Postgres (replaces `create_all` + `scripts/migrate.py`, which is SQLite-only)
-- [ ] Decide: migrate existing dev data (pgloader / small script) or start clean
+- [x] `psycopg[binary]` + `alembic` in `backend/requirements.txt`
+- [x] DB credentials fully env-driven: `PG_*` vars in `.env` compose into the connection URL (`DATABASE_URL` overrides if set; nothing set = legacy SQLite). Changing user/password/host/port = edit `.env` only.
+- [x] Dedicated `orderkoi` role + database on the local PostgreSQL 17 (port **5433** — PG 15 owns 5432); the app never uses the superuser.
+- [x] Alembic schema management (`backend/migrations/`); startup `create_all` removed; `alembic upgrade head` sets up a fresh DB.
+- [x] SQLite-specific date SQL replaced by dialect-portable `BusinessDay`/`BusinessMonth`; aware/naive timestamptz handling fixed (`to_business_time`, `as_naive_utc`); PG session pinned to UTC.
+- [x] Existing dev data migrated id-preserving with sequence resets (`scripts/sqlite_to_postgres.py`); `scripts/migrate.py` guarded as SQLite-only legacy.
+- [x] Tests stay on in-memory SQLite (fast, portable) + 11 new dialect-compilation/config tests; full suite 188/188; E2E and live endpoints verified against PG.
+- [x] `scripts/backup_db.py` → pg_dump custom format on Postgres (Task Scheduler job unchanged).
+- [ ] **Follow-up (deferred, before/with 8c):** `Float` → `Numeric(12,2)` money columns (exact taka). Orthogonal to the DB shift — floats drift on SQLite too — deferred to avoid destabilizing the verified migration; needs its own Alembic revision + Decimal handling in schemas/CSV.
 
 ## 🔴 Phase 8c — Dockerize + deploy
 

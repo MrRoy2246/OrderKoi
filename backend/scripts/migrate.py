@@ -1,7 +1,8 @@
-"""Lightweight schema migration for the dev SQLite database.
+"""Lightweight schema migration for the LEGACY dev SQLite database.
 
-Adds columns introduced after the database was first created
-(uvicorn's create_all only creates missing *tables*, never columns).
+Superseded by Alembic (backend/migrations/) since the PostgreSQL
+shift — kept only because it documents the SQLite-era column history.
+Refuses to run against anything but a sqlite:// URL.
 
 Usage (from backend/):
     python -m scripts.migrate
@@ -9,10 +10,15 @@ Usage (from backend/):
 
 from sqlalchemy import inspect, text
 
-from app.database import engine
+from app.database import SessionLocal, engine
 from app.models import Seller
 from app.slugs import unique_store_slug
-from app.database import SessionLocal
+
+if not str(engine.url).startswith("sqlite"):
+    raise SystemExit(
+        "scripts/migrate.py is SQLite-only (legacy). "
+        "Use `alembic upgrade head` for the current database."
+    )
 
 NEW_COLUMNS = {
     "sellers": {
