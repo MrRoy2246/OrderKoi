@@ -41,14 +41,6 @@ def day_bounds_utc(day: date) -> tuple[datetime, datetime]:
     return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
 
 
-def month_start_utc() -> datetime:
-    """Aware-UTC instant of the start of the current business-timezone
-    month (where the free-plan monthly quota meter resets)."""
-    now_local = business_now()
-    start_local = datetime(now_local.year, now_local.month, 1, tzinfo=_tz)
-    return start_local.astimezone(timezone.utc)
-
-
 def to_business_time(utc: datetime) -> datetime:
     """Convert a stored UTC timestamp to business-local time — for
     display to the seller (e.g. CSV export dates). Every datetime the

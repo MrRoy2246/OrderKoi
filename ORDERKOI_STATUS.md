@@ -59,7 +59,9 @@ _Last updated: 2026-09-07_
 
 ## 🔴 Phase 8c — Dockerize + deploy
 
-- [ ] `backend/Dockerfile` — Python slim image, requirements, gunicorn running uvicorn workers (**1 worker** — the in-memory rate limiter is per-process; Redis-backed limiter is the scale-out upgrade)
+- [ ] `backend/Dockerfile` — Python slim image, requirements, gunicorn (in `requirements.txt` since 2026-09-07) running uvicorn workers (**1 worker** — the in-memory rate limiter is per-process; Redis-backed limiter is the scale-out upgrade)
+- [ ] **Proxy headers** — uvicorn must run with `--proxy-headers --forwarded-allow-ips` (Caddy/nginx container IP or the compose network): the rate limiter keys on `request.client.host`, which behind a proxy is the *proxy's* IP — without this every visitor shares ONE bucket and real users get 429s
+- [ ] **CSP header** — set `Content-Security-Policy` on whatever serves the frontend (nginx/Caddy config): it's the XSS defense for the JWT-in-localStorage design; the backend deliberately doesn't set it (JSON API)
 - [ ] `frontend/Dockerfile` — node build stage passing `VITE_API_URL` as a build arg (the API base is baked at build time in `src/api/client.js`), then nginx serving `dist/`
 - [ ] `docker-compose.yml` — backend + frontend(nginx) + Postgres with a volume + Caddy reverse proxy for auto-TLS (recommended; handles HTTPS certificates for the domain)
 - [ ] `.dockerignore` files — backend `venv/` and frontend `node_modules/`/`dist/` must not bake into images

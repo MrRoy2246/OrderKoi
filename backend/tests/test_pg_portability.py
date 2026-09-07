@@ -51,8 +51,8 @@ class TestAwareDatetimes:
         # Dhaka is UTC+6: local midnight is 18:00 UTC the previous day
         assert (start.hour, start.day) == (18, 6)
 
-    def test_month_start_is_aware_utc(self):
-        assert tz.month_start_utc().tzinfo is not None
+    def test_business_now_is_aware(self):
+        assert tz.business_now().tzinfo is not None
 
     def test_to_business_time(self):
         aware = datetime(2026, 9, 7, 18, 0, tzinfo=timezone.utc)
