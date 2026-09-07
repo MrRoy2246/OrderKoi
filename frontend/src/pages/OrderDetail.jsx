@@ -13,6 +13,14 @@ import {
   trackingUrl,
 } from "../utils/orderStatus";
 
+/**
+ * Order detail — one order, everything the seller can do with it:
+ * edit customer/items (locked once delivered/cancelled), advance the
+ * status along the backend's workflow (valid next steps only — the
+ * server enforces the same transitions), copy the customer's tracking
+ * link, and delete (only while still 'placed'). Status changes email
+ * the customer server-side.
+ */
 export default function OrderDetail() {
   const { id } = useParams();
   const navigate = useNavigate();

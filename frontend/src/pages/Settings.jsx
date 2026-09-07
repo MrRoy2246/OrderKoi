@@ -5,6 +5,13 @@ import Icon from "../components/icons";
 import PlanSection from "../components/PlanSection";
 import { parseServerDate } from "../utils/orderStatus";
 
+/**
+ * Settings — the seller's account hub: store profile (name/phone),
+ * the shareable public order-form link (copy to clipboard), the
+ * subscription card (PlanSection: plans, bKash payment, history) and
+ * logout. The store slug is fixed — it's the public URL customers
+ * already have.
+ */
 export default function Settings() {
   const { seller, refresh } = useAuth();
 

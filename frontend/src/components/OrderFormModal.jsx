@@ -1,14 +1,12 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, getErrorMessage } from "../api/client";
 import Icon from "./icons";
 import QtyStepper from "./QtyStepper";
 import { formatTk } from "../utils/orderStatus";
+import { fetchPublicConfig, getFreePlanOrders } from "../utils/proPricing";
 
 const EMPTY_ITEM = { name: "", quantity: 1, price: "" };
-
-/** Must match the backend's free_plan_orders setting. */
-const FREE_PLAN_ORDERS = 15;
 
 /**
  * Modal form for creating a new order.
@@ -24,6 +22,12 @@ export default function OrderFormModal({ onClose, onCreated }) {
   const [error, setError] = useState(null);
   const [limitReached, setLimitReached] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Make sure the business config (free-plan allowance) is loaded —
+  // cached, so this is free when a parent already fetched it
+  useEffect(() => {
+    fetchPublicConfig();
+  }, []);
 
   const total = useMemo(
     () =>
@@ -127,7 +131,7 @@ export default function OrderFormModal({ onClose, onCreated }) {
             <div className="alert alert--error" role="alert">
               <strong>Free order limit reached</strong>
               <p style={{ margin: "6px 0 0" }}>
-                Your free plan includes {FREE_PLAN_ORDERS} orders in total. Upgrade to
+                Your free plan includes {getFreePlanOrders()} orders in total. Upgrade to
                 Pro for unlimited orders — your existing orders and data stay exactly
                 as they are.
               </p>

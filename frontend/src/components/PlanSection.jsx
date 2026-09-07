@@ -3,16 +3,26 @@ import { useAuth } from "../auth/AuthContext";
 import { api, getErrorMessage } from "../api/client";
 import Icon from "./icons";
 import { parseServerDate } from "../utils/orderStatus";
-import { fetchProOptions, PRO_OPTIONS_FALLBACK } from "../utils/proPricing";
+import {
+  fetchPublicConfig,
+  getBkash,
+  getFreePlanOrders,
+  getProOptions,
+  PRO_OPTIONS_FALLBACK,
+} from "../utils/proPricing";
 
-/** Where sellers send payment. */
-const PAYMENT_INSTRUCTIONS =
-  "Send the amount via bKash to 01736060259 (Personal), then submit " +
-  "the request below with your transaction ID. We'll activate Pro after " +
-  "verifying the payment (usually within a few hours).";
-
-/** Must match the backend's free_plan_orders setting. */
-const FREE_PLAN_ORDERS = 15;
+/** Payment instructions — the bKash number/type comes from the live
+ * backend config (BKASH_NUMBER/BKASH_TYPE in backend/.env), so it
+ * renders before/after the fetch with the current default. */
+function paymentInstructions() {
+  const bkash = getBkash();
+  return (
+    "Send the amount via bKash to " +
+    `${bkash.number} (${bkash.type}), then submit ` +
+    "the request below with your transaction ID. We'll activate Pro after " +
+    "verifying the payment (usually within a few hours)."
+  );
+}
 
 const STATUS_LABELS = {
   pending: { text: "Pending review", className: "upgrade-status--pending" },
@@ -62,13 +72,18 @@ export default function PlanSection() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [proOptions, setProOptions] = useState(PRO_OPTIONS_FALLBACK);
+  // Bumps when the live config lands — the re-render is what makes
+  // config-derived text (payment instructions, free-plan count) re-read
+  const [, setConfigVersion] = useState(0);
 
-  // Live prices from the backend (env-driven there) — fallback keeps
-  // the card rendered if the fetch fails
+  // Live business config from the backend (env-driven there) — the
+  // fallback keeps the card rendered if the fetch fails
   useEffect(() => {
     let cancelled = false;
-    fetchProOptions().then((options) => {
-      if (!cancelled) setProOptions(options);
+    fetchPublicConfig().then(() => {
+      if (cancelled) return;
+      setProOptions(getProOptions());
+      setConfigVersion((v) => v + 1);
     });
     return () => {
       cancelled = true;
@@ -167,7 +182,7 @@ export default function PlanSection() {
     const confirmed = window.confirm(
       "Cancel your Pro subscription?\n\n" +
         "• Your Pro status ends immediately\n" +
-        `• Your account returns to the Free plan (${FREE_PLAN_ORDERS} lifetime free orders)\n` +
+        `• Your account returns to the Free plan (${getFreePlanOrders()} lifetime free orders)\n` +
         "• Payments already made are not refunded automatically — contact support if needed\n\n" +
         "If you just don't want to renew, you can simply do nothing instead."
     );
@@ -216,7 +231,7 @@ export default function PlanSection() {
         <span className="plan-limit-note">
           {proActive
             ? "Unlimited orders"
-            : `Free plan — first ${FREE_PLAN_ORDERS} orders, unlimited on Pro`}
+            : `Free plan — first ${getFreePlanOrders()} orders, unlimited on Pro`}
         </span>
       </div>
 
@@ -264,7 +279,7 @@ export default function PlanSection() {
             </div>
           ) : (
             <form onSubmit={handleSubmit} noValidate>
-              <p className="payment-instructions">{PAYMENT_INSTRUCTIONS}</p>
+              <p className="payment-instructions">{paymentInstructions()}</p>
               <div className="field">
                 <label htmlFor="payment_ref">
                   bKash transaction ID *

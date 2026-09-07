@@ -38,6 +38,15 @@ function toApiStatuses(value) {
   return NAMED_FILTERS[value] ?? [value];
 }
 
+/**
+ * Orders — the seller's working list. Search (name/phone/email/order
+ * number), multi-status filter, date-window tabs, and pagination;
+ * clicking an order opens its detail page. The New Order button opens
+ * the creation modal (dashboard-source orders). On mobile the table
+ * becomes order cards. CSV export follows the exact filters shown.
+ * Free-plan accounts see the usage meter and the limit banner.
+ */
+
 /** "Sep 2" style date for the active-filter summary in the header. */
 function formatShortDate(value) {
   if (!value) return null;

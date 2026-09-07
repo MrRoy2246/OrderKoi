@@ -3,6 +3,13 @@ import { useAuth } from "../auth/AuthContext";
 import Icon from "../components/icons";
 import Logo from "../components/Logo";
 
+/**
+ * Landing — the public front door: the pitch (features, how it works,
+ * plan pricing), signup/login entry points, and the legal links in
+ * the footer. Logged-in users skip the pitch and go straight to
+ * their dashboard (still reachable for reference).
+ */
+
 const FEATURES = [
   {
     icon: "package",

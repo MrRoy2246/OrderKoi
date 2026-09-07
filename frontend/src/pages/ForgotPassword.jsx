@@ -4,6 +4,13 @@ import { api, getErrorMessage } from "../api/client";
 import Icon from "../components/icons";
 import Logo from "../components/Logo";
 
+/**
+ * Forgot password — step 1 of the reset flow. The API responds
+ * identically whether or not the email belongs to an account (anti-
+ * enumeration), so the page shows one "check your inbox" message for
+ * every submit; real emails carry a 30-minute single-use link to
+ * /reset-password.
+ */
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);

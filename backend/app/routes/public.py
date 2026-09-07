@@ -32,6 +32,7 @@ from app.routes.orders import (
 )
 from app.schemas import (
     PricingOut,
+    PublicConfigOut,
     PublicOrderCreate,
     PublicOrderCreated,
     PublicStoreOut,
@@ -45,16 +46,33 @@ settings = get_settings()
 
 @router.get(
     "/pricing",
-    response_model=list[PricingOut],
-    summary="Pro plan pricing (public, env-driven)",
+    response_model=PublicConfigOut,
+    summary="Public business configuration (env-driven)",
 )
-def get_pricing() -> list[PricingOut]:
-    """One entry per Pro duration, newest info from .env. The frontend
-    (Settings pricing cards, admin's expected-payment verification)
-    reads this live — change a price in .env, restart, done. Prices are
-    public by nature: sellers see them before logging in."""
+def get_pricing() -> PublicConfigOut:
+    """The platform's business rules, straight from the current
+    settings (.env): Pro prices per duration, the free-plan allowance,
+    where to send bKash payments, and the support contact.
+
+    The frontend fetches this live (Settings pricing cards, free-plan
+    meter and banners, payment instructions, legal-page contact
+    details, admin expected-payment verification) — so changing any of
+    these is an .env edit + backend restart. No code change, no
+    frontend rebuild; offers can change any time. It's public by
+    design: sellers see pricing before logging in.
+
+    Kept at the historical path /public/stores/pricing (it grew from
+    prices-only into the full config). Settings are read per-request
+    (not cached at import) so tests can override them."""
+    current = get_settings()
     prices = pro_prices()
-    return [PricingOut(months=months, price=prices[months]) for months in (1, 6, 12)]
+    return PublicConfigOut(
+        pro=[PricingOut(months=months, price=prices[months]) for months in (1, 6, 12)],
+        free_plan_orders=current.free_plan_orders,
+        bkash_number=current.bkash_number,
+        bkash_type=current.bkash_type,
+        support_email=current.support_email,
+    )
 
 
 def _get_store(slug: str, db: Session) -> Seller:

@@ -5,6 +5,14 @@ import { api, getErrorMessage } from "../api/client";
 import Icon from "../components/icons";
 import Logo from "../components/Logo";
 
+/**
+ * Login — existing accounts. Handles three outcomes distinctly:
+ * success (admins route to /admin, sellers to /dashboard), wrong
+ * credentials (one generic message — never reveals which field was
+ * wrong), and unverified email (403 → offers the resend-verification
+ * link instead of a dead end). A just-completed password reset shows
+ * a confirmation note via ?reset=success.
+ */
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();

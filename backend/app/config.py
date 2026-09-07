@@ -76,6 +76,18 @@ class Settings(BaseSettings):
     pro_price_6m: int = 1750
     pro_price_12m: int = 2900
 
+    # --- Business configuration (all env-driven, served at the public
+    # /pricing endpoint so the frontend follows without a rebuild) ---
+
+    # Where sellers send their bKash payment for Pro (shown in the
+    # Settings payment instructions and emails refer to it).
+    bkash_number: str = "01736060259"
+    # bKash account type shown next to the number ("Personal"/"Agent")
+    bkash_type: str = "Personal"
+
+    # Public contact address for legal pages and support questions.
+    support_email: str = "abinroy510@gmail.com"
+
     # Password reset
     frontend_url: str = "http://localhost:5173"
     reset_token_expire_minutes: int = 30

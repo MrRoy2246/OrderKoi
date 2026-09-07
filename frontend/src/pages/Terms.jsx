@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Icon from "../components/icons";
 import Logo from "../components/Logo";
+import { fetchPublicConfig, getSupportEmail } from "../utils/proPricing";
 
 /**
  * Terms of Service — the deal between OrderKoi, its sellers, and their
@@ -9,9 +11,23 @@ import Logo from "../components/Logo";
  */
 
 const LAST_UPDATED = "6 September 2026";
-const CONTACT_EMAIL = "abinroy510@gmail.com";
 
 export default function Terms() {
+  // Support email comes from the live backend config (SUPPORT_EMAIL in
+  // backend/.env) — falls back to the default until it loads
+  const [supportEmail, setSupportEmail] = useState(getSupportEmail());
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchPublicConfig().then(() => {
+      if (!cancelled) setSupportEmail(getSupportEmail());
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const CONTACT_EMAIL = supportEmail;
+
   return (
     <div className="page-centered">
       <div className="auth-card" style={{ maxWidth: "640px", textAlign: "left" }}>

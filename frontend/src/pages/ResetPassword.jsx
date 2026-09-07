@@ -4,6 +4,13 @@ import { api, getErrorMessage } from "../api/client";
 import Icon from "../components/icons";
 import Logo from "../components/Logo";
 
+/**
+ * Reset password — step 2 of the reset flow (arrives via the email
+ * link, ?token=…). The token is single-use and expires in 30 minutes;
+ * on success every previously issued session token is invalidated
+ * server-side (stolen sessions can't outlive the reset), and we route
+ * to /login?reset=success.
+ */
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
   const token = searchParams.get("token") || "";

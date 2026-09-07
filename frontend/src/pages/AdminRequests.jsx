@@ -7,7 +7,7 @@ import {
   formatTk,
   parseServerDate,
 } from "../utils/orderStatus";
-import { proPriceFor, fetchProOptions } from "../utils/proPricing";
+import { proPriceFor, fetchPublicConfig } from "../utils/proPricing";
 
 const STATUS_META = {
   pending: { label: "Pending", className: "upgrade-status--pending" },
@@ -83,7 +83,7 @@ export default function AdminRequests() {
   // Live prices (env-driven on the backend) for the "should have paid"
   // verification figures — recompute when they arrive
   useEffect(() => {
-    fetchProOptions().then(() => setPricingVersion((v) => v + 1));
+    fetchPublicConfig().then(() => setPricingVersion((v) => v + 1));
   }, []);
 
   useEffect(() => {

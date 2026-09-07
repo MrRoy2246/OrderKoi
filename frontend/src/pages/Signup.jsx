@@ -13,6 +13,13 @@ const INITIAL_FORM = {
   confirm: "",
 };
 
+/**
+ * Signup — new seller accounts. Creates the account only: login stays
+ * blocked until the email address is verified (the welcome email
+ * carries the link), so success shows a "check your email" screen
+ * rather than auto-logging in. Client-side checks are a UX nicety —
+ * the backend re-validates everything and stays the authority.
+ */
 export default function Signup() {
   const { signup } = useAuth();
 

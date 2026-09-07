@@ -34,36 +34,48 @@ def form_payload():
     }
 
 
-# ---------- Pricing ----------
+# ---------- Pricing / public config ----------
 
 def test_pricing_endpoint_public_and_complete(client):
-    """GET /public/stores/pricing needs no auth and lists all three
-    durations with the current (env-driven) prices."""
+    """GET /public/stores/pricing needs no auth and carries the whole
+    public business config: all three durations priced, the free-plan
+    allowance, bKash details and the support contact (all env-driven)."""
     response = client.get("/public/stores/pricing")
     assert response.status_code == 200
-    entries = response.json()
-    assert [e["months"] for e in entries] == [1, 6, 12]
-    for entry in entries:
+    data = response.json()
+    assert [e["months"] for e in data["pro"]] == [1, 6, 12]
+    for entry in data["pro"]:
         assert isinstance(entry["price"], int)
         assert entry["price"] > 0
+    assert isinstance(data["free_plan_orders"], int)
+    assert data["free_plan_orders"] > 0
+    assert data["bkash_number"]
+    assert data["bkash_type"]
+    assert "@" in data["support_email"]
 
 
 def test_pricing_reflects_env_overrides(client, monkeypatch):
-    """Prices come from settings — an env change flows through the
-    endpoint (this is the 'change one thing in env' contract)."""
+    """Config values come from settings — an env change flows through
+    the endpoint (this is the 'change one thing in env' contract)."""
     from app.config import get_settings
 
     get_settings.cache_clear()
     monkeypatch.setenv("PRO_PRICE_1M", "299")
     monkeypatch.setenv("PRO_PRICE_6M", "1499")
     monkeypatch.setenv("PRO_PRICE_12M", "2499")
+    monkeypatch.setenv("FREE_PLAN_ORDERS", "10")
+    monkeypatch.setenv("BKASH_NUMBER", "01700000000")
+    monkeypatch.setenv("SUPPORT_EMAIL", "support@orderkoi.example")
     try:
         # re-instantiate settings so the env change is picked up
         from app.config import Settings
         monkeypatch.setattr("app.config.get_settings", lambda: Settings())
         monkeypatch.setattr("app.schemas.get_settings", lambda: Settings())
-        entries = {e["months"]: e["price"] for e in client.get("/public/stores/pricing").json()}
-        assert entries == {1: 299, 6: 1499, 12: 2499}
+        data = client.get("/public/stores/pricing").json()
+        assert {e["months"]: e["price"] for e in data["pro"]} == {1: 299, 6: 1499, 12: 2499}
+        assert data["free_plan_orders"] == 10
+        assert data["bkash_number"] == "01700000000"
+        assert data["support_email"] == "support@orderkoi.example"
     finally:
         get_settings.cache_clear()
 

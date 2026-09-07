@@ -9,6 +9,7 @@ import StatusBreakdown from "../components/StatusBreakdown";
 import FreeLimitBanner, { FreeOrderMeter } from "../components/FreeLimitBanner";
 import { ordersLink } from "../utils/businessDate";
 import { formatTk, parseServerDate } from "../utils/orderStatus";
+import { fetchPublicConfig, getFreePlanOrders } from "../utils/proPricing";
 
 const RANGE_OPTIONS = [
   { value: "today", label: "Today" },
@@ -19,9 +20,6 @@ const RANGE_OPTIONS = [
 ];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** Must match the backend's free_plan_orders setting. */
-const FREE_PLAN_ORDERS = 15;
 
 function formatDate(value) {
   if (!value) return null;
@@ -79,7 +77,9 @@ function SubscriptionCard({ seller, stats }) {
     subline = `Your subscription ended ${formatDate(expiry)} — renew to keep supporting the platform.`;
   } else {
     headline = "Free plan";
-    subline = `First ${FREE_PLAN_ORDERS} orders free — unlimited on Pro`;
+    // plan_limit comes from the logged-in stats response (backend-truth);
+    // getFreePlanOrders() is the pre-fetch fallback
+    subline = `First ${stats?.plan_limit ?? getFreePlanOrders()} orders free — unlimited on Pro`;
   }
 
   return (
@@ -254,6 +254,12 @@ export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Business config (free-plan allowance) from the backend — env-driven
+  // there; fetched once so the free-plan texts match the live setting
+  useEffect(() => {
+    fetchPublicConfig();
+  }, []);
 
   const fetchStats = useCallback((params) => {
     setLoading(true);

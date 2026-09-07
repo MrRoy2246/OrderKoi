@@ -159,13 +159,26 @@ class PlanUpdate(BaseModel):
 # rebuild. Admins must set all three together (the durations are the
 # plan structure; a missing value falls back to the default).
 class PricingOut(BaseModel):
-    """Public pricing — one entry per Pro duration."""
+    """One Pro duration with its price."""
 
     months: Literal[1, 6, 12]
     price: int
 
 
-from app.config import get_settings  # noqa: E402 — after the class, for clarity
+class PublicConfigOut(BaseModel):
+    """Everything the frontend needs to render business rules — prices,
+    the free-plan allowance, payment instructions and the support
+    contact. All env-driven on the backend, so changing any of them is
+    an .env edit + restart, and every page follows without a rebuild."""
+
+    pro: list[PricingOut]
+    free_plan_orders: int
+    bkash_number: str
+    bkash_type: str
+    support_email: str
+
+
+from app.config import get_settings  # noqa: E402 — after the classes, for clarity
 
 
 def pro_prices() -> dict[int, int]:
