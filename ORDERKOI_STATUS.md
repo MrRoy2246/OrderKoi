@@ -64,7 +64,7 @@ _Last updated: 2026-09-07_
 - [ ] `docker-compose.yml` — backend + frontend(nginx) + Postgres with a volume + Caddy reverse proxy for auto-TLS (recommended; handles HTTPS certificates for the domain)
 - [ ] `.dockerignore` files — backend `venv/` and frontend `node_modules/`/`dist/` must not bake into images
 - [ ] Production `.env` — fresh strong `SECRET_KEY` (boot validation already refuses the default), real `CORS_ORIGINS` (production domain), `FRONTEND_URL` = real domain (reset-link emails use it), `ENVIRONMENT=production`
-- [ ] Bootstrap the admin account in the fresh DB (`backend/scripts/seed_admin.py` exists) with a strong password
+- [ ] Bootstrap the admin account in the fresh DB (`python -m scripts.create_admin admin@yourdomain.com` — idempotent, prints a random password once, account is email-verified so the login gate lets it in; promote an existing account by passing that email)
 - [ ] VPS or managed host + domain; nightly DB backups (cron `pg_dump` to a second location); uptime monitoring
 - [ ] Decide: point `docker-compose` at the existing dev Postgres data (migrated) or start clean
 
@@ -105,7 +105,7 @@ _Last updated: 2026-09-07_
 
 ## 📋 Production-readiness review (2026-09-02) — what the audit found
 
-**Already real-project quality:** SECRET_KEY boot validation in production; per-IP sliding-window rate limits on login/signup/forgot-password/tracking/public-form; generic 500s (no stack traces leak); `/health` endpoint; Pydantic validation on every input; tracking page hides addresses/phones; admin routes 403 (not discoverable); 165 tests; WAL mode; email failures never crash requests; `seed_admin.py` exists.
+**Already real-project quality:** SECRET_KEY boot validation in production; per-IP sliding-window rate limits on login/signup/forgot-password/tracking/public-form; generic 500s (no stack traces leak); `/health` endpoint; Pydantic validation on every input; tracking page hides addresses/phones; admin routes 403 (not discoverable); 165 tests; WAL mode; email failures never crash requests; `create_admin.py` exists.
 
 **Gaps (each addressed by a Phase 8 step above):** no Docker files; frontend API URL baked at build time (needs Docker build arg); `FRONTEND_URL` in email links must point at the real domain; CORS defaults to localhost; no production WSGI server or Postgres driver in requirements; SMTP console-only until Phase 8a; in-memory rate limiter assumes a single worker; no backups; no migrations tool; no TLS termination (→ Caddy).
 

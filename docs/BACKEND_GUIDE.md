@@ -114,9 +114,8 @@ backend/
 │       ├── admin.py   # /admin/* — stats, sellers, upgrade requests, subscription events
 │       └── public.py  # /public/stores/{slug} — order form + is_accepting_orders (honeypot)
 ├── scripts/
-│   ├── seed_admin.py  # Bootstrap an admin account
-│   ├── make_admin.py  # Promote an existing seller to admin
-│   ├── backup_db.py   # Timestamped pg_dump backup (keep 14) — runs daily via Task Scheduler
+│   ├── create_admin.py # Bootstrap/promote the platform admin (idempotent) - run after alembic upgrade head on a fresh DB
+│   ├── backup_db.py   # Timestamped pg_dump backup (keep 14) - runs daily via Task Scheduler
 │   └── audit_probe.py # Manual audit helpers
 ├── backups/           # Backup output (gitignored)
 ├── tests/             # pytest suite (177 tests)
