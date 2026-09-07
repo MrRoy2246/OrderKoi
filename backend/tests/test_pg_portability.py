@@ -1,72 +1,64 @@
-"""Dialect-portability tests for the PostgreSQL shift (Phase 8b).
+"""PostgreSQL-shift unit tests: date-grouping SQL, aware datetime
+helpers, and the env-driven connection-URL composition.
 
-The date-grouping SQL (BusinessDay / BusinessMonth) must compile to
-correct, equivalent SQL on both dialects the app runs on: SQLite
-(tests, legacy dev) and PostgreSQL (dev/prod). These tests compile
-the expressions against both dialects without needing a live
-PostgreSQL server — the SQL string is what we verify, plus the
-config layer that builds the connection URL from PG_* variables.
+The suite itself runs on PostgreSQL (tests/conftest.py), so the SQL
+here is also exercised for real by the API tests — these pin the exact
+compiled shape and the config rules.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy.dialects import postgresql, sqlite
+import pytest
+from pydantic import ValidationError
+from sqlalchemy import select
+from sqlalchemy.dialects import postgresql
 
 from app import timezone as tz
 from app.config import Settings
 from app.models import Order
 
 
-def _compile(expr, dialect):
-    return str(expr.compile(dialect=dialect, compile_kwargs={"literal_binds": True}))
+def _compile(expr) -> str:
+    return str(expr.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
 
 
-class TestBusinessDay:
-    def test_sqlite_compilation_uses_date_with_offset(self):
-        sql = _compile(tz.BusinessDay(Order.created_at), sqlite.dialect())
-        # SQLite: date(col, '+N hours' [, minutes]) — shift happens in SQL
-        assert sql.startswith("date(")
-        assert "hours" in sql  # the UTC→business offset modifier is present
+class TestBusinessDaySql:
+    def test_compiles_to_at_time_zone_cast(self):
+        sql = _compile(select(tz.business_day(Order.created_at)))
+        # CAST(created_at AT TIME ZONE 'Asia/Dhaka' AS DATE)
+        assert "AT TIME ZONE 'Asia/Dhaka'" in sql
+        assert "AS DATE" in sql
 
-    def test_postgresql_compilation_uses_at_time_zone(self):
-        sql = _compile(tz.BusinessDay(Order.created_at), postgresql.dialect())
-        # Postgres: CAST(col AT TIME ZONE '<tz>' AS DATE)
-        assert "AT TIME ZONE" in sql
-        assert tz.get_settings().app_timezone in sql
-        assert "CAST(" in sql and "AS DATE" in sql
+    def test_no_sqlite_left_behind(self):
+        # The SQLite-era date()/strftime() modifiers are gone for good
+        sql = _compile(select(tz.business_day(Order.created_at)))
+        assert "date(" not in sql.replace("AS DATE", "")
+        assert "strftime" not in sql
 
 
-class TestBusinessMonth:
-    def test_sqlite_compilation_uses_strftime(self):
-        sql = _compile(tz.BusinessMonth(Order.created_at), sqlite.dialect())
-        assert "strftime('%Y-%m'" in sql
-        assert "hours" in sql
-
-    def test_postgresql_compilation_uses_to_char(self):
-        sql = _compile(tz.BusinessMonth(Order.created_at), postgresql.dialect())
-        assert "TO_CHAR(" in sql
+class TestBusinessMonthSql:
+    def test_compiles_to_to_char(self):
+        sql = _compile(select(tz.business_month(Order.created_at)))
+        assert "to_char(" in sql.lower()
         assert "'YYYY-MM'" in sql
-        assert "AT TIME ZONE" in sql
+        assert "AT TIME ZONE 'Asia/Dhaka'" in sql
 
 
-class TestToBusinessTime:
-    def test_accepts_naive_utc(self):
-        naive = datetime(2026, 9, 7, 18, 0)  # 18:00 UTC
-        local = tz.to_business_time(naive)  # Dhaka = UTC+6
+class TestAwareDatetimes:
+    def test_day_bounds_are_aware_utc(self):
+        start, end = tz.day_bounds_utc(date(2026, 9, 7))
+        assert start.tzinfo is not None and end.tzinfo is not None
+        # Dhaka is UTC+6: local midnight is 18:00 UTC the previous day
+        assert (start.hour, start.day) == (18, 6)
+
+    def test_month_start_is_aware_utc(self):
+        assert tz.month_start_utc().tzinfo is not None
+
+    def test_to_business_time(self):
+        aware = datetime(2026, 9, 7, 18, 0, tzinfo=timezone.utc)
+        local = tz.to_business_time(aware)  # Dhaka = UTC+6
         assert local.hour == 0
         assert local.day == 8  # midnight next day
-
-    def test_accepts_aware_utc(self):
-        # PostgreSQL timestamptz columns come back timezone-aware
-        aware = datetime(2026, 9, 7, 18, 0, tzinfo=timezone.utc)
-        local = tz.to_business_time(aware)
-        assert local.hour == 0
-        assert local.day == 8
-
-    def test_naive_and_aware_agree(self):
-        naive = datetime(2026, 1, 15, 3, 30)
-        aware = naive.replace(tzinfo=timezone.utc)
-        assert tz.to_business_time(naive) == tz.to_business_time(aware)
 
 
 class TestDatabaseUrlComposition:
@@ -83,17 +75,17 @@ class TestDatabaseUrlComposition:
             "postgresql+psycopg://orderkoi:secret-pw@db.example.com:5433/orderkoi"
         )
 
-    def test_no_config_falls_back_to_dev_sqlite(self):
-        settings = Settings(_env_file=None)
-        assert settings.database_url == "sqlite:///./orderkoi.db"
+    def test_missing_password_is_a_boot_error(self):
+        with pytest.raises(ValidationError):
+            Settings(PG_PASSWORD="", _env_file=None)
 
     def test_explicit_database_url_wins_over_pg_vars(self):
         settings = Settings(
-            DATABASE_URL="sqlite:///./custom.db",
+            DATABASE_URL="postgresql+psycopg://other:pw@db:5432/otherdb",
             PG_PASSWORD="irrelevant",
             _env_file=None,
         )
-        assert settings.database_url == "sqlite:///./custom.db"
+        assert settings.database_url == "postgresql+psycopg://other:pw@db:5432/otherdb"
 
     def test_password_special_characters_are_escaped(self):
         settings = Settings(

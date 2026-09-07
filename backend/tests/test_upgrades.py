@@ -100,10 +100,10 @@ def test_admin_approves_request_activates_pro(client, seller, auth_headers, admi
     # Expiry is ~6 months out
     from datetime import datetime
 
-    from app.models import as_aware, utcnow
+    from app.models import utcnow
 
     expires = datetime.fromisoformat(me["plan_expires_at"])
-    assert as_aware(expires) > utcnow() + timedelta(days=5 * 30)
+    assert expires > utcnow() + timedelta(days=5 * 30)
 
     # The seller was notified
     assert any("Pro plan is active" in e["subject"] for e in captured_email)
@@ -186,7 +186,7 @@ def test_upgrade_requests_admin_only(client, auth_headers):
 
 def test_renewal_stacks_on_active_subscription(client, seller, auth_headers, admin_headers):
     """Approving again extends from the current expiry, not from today."""
-    from app.models import Seller, as_aware, utcnow
+    from app.models import Seller, utcnow
 
     first = client.post("/auth/upgrade-requests", json={"months": 12}, headers=auth_headers).json()
     client.patch(
@@ -204,7 +204,7 @@ def test_renewal_stacks_on_active_subscription(client, seller, auth_headers, adm
     def parse(value):
         from datetime import datetime
 
-        return as_aware(datetime.fromisoformat(value.replace("Z", "+00:00")))
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
     added = parse(expiry_after_renewal) - parse(expiry_after_year)
     # ~1 month added (27–35 days tolerance), not a reset to today + 1 month
     assert timedelta(days=27) < added < timedelta(days=35)

@@ -468,9 +468,7 @@ def test_business_timezone_day_boundary(client, auth_headers, order):
     local_morning = datetime(
         today.year, today.month, today.day, 0, 30, tzinfo=dhaka
     )
-    stored_utc = (
-        local_morning.astimezone(dt_timezone.utc).replace(tzinfo=None)
-    )
+    stored_utc = local_morning.astimezone(dt_timezone.utc)
     # Sanity: 00:30 Dhaka is 18:30 UTC of the previous day
     assert stored_utc.date() == yesterday_date
 

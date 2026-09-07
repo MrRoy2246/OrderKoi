@@ -25,7 +25,6 @@ from app.models import (
     Seller,
     SubscriptionEvent,
     UpgradeRequest,
-    as_aware,
     pro_plan_active,
     utcnow,
 )
@@ -42,9 +41,8 @@ from app.schemas import (
     UpgradeRequestAction,
 )
 from app.timezone import (
-    BusinessDay,
-    BusinessMonth,
-    as_naive_utc,
+    business_day,
+    business_month,
     business_now,
     business_today,
     business_tz,
@@ -69,8 +67,8 @@ def _subscription_revenue(db: Session, since: datetime | None = None) -> float:
 
     Each paid ledger entry's months map to a price from PRO_PRICES;
     entries with an unknown duration (data oddities) contribute nothing.
-    `since` (UTC, naive — how ledger timestamps are stored) limits the
-    sum to recent entries, e.g. the 30-day pulse.
+    `since` (aware UTC) limits the sum to recent entries, e.g. the
+    30-day pulse.
     """
     query = db.query(SubscriptionEvent.months).filter(
         SubscriptionEvent.event.in_(["subscribed", "renewed"]),
@@ -153,7 +151,7 @@ def platform_stats(
         window_start = today - timedelta(days=days - 1)
         window_end = today
         window_days = days
-    # Naive UTC boundaries, exactly how created_at is stored
+    # Aware-UTC window boundaries (timestamptz comparisons)
     window_start_dt, _ = day_bounds_utc(window_start)
     _, window_end_dt = day_bounds_utc(window_end)
     # Monthly series (GMV / signups / subscription money): scoped to
@@ -229,7 +227,7 @@ def platform_stats(
     sub_month_map: dict[str, float] = {}
     sub_month_count_map: dict[str, int] = {}
     for created_at, months in paid_events:
-        key = to_business_time(as_aware(created_at)).strftime("%Y-%m")
+        key = to_business_time(created_at).strftime("%Y-%m")
         sub_month_map[key] = sub_month_map.get(key, 0.0) + PRO_PRICES.get(months, 0)
         sub_month_count_map[key] = sub_month_count_map.get(key, 0) + 1
 
@@ -237,7 +235,7 @@ def platform_stats(
 
     # Orders per day, over the window chosen above (7 / 30 / 90-day
     # presets or a custom range — the dashboard's range filter).
-    day_expr = BusinessDay(Order.created_at)
+    day_expr = business_day(Order.created_at)
     daily_rows = (
         db.query(
             day_expr,
@@ -297,7 +295,7 @@ def platform_stats(
             str(day): (int(count), round(float(total), 2))
             for day, count, total in gmv_daily_rows
         }
-        signup_day_expr = BusinessDay(Seller.created_at)
+        signup_day_expr = business_day(Seller.created_at)
         signup_day_rows = (
             db.query(signup_day_expr, func.count(Seller.id))
             .filter(
@@ -313,8 +311,8 @@ def platform_stats(
         sub_day_map: dict[str, float] = {}
         sub_day_count_map: dict[str, int] = {}
         for created_at, months in paid_events:
-            if window_start_dt <= as_naive_utc(created_at) < window_end_dt:
-                key = to_business_time(as_aware(created_at)).strftime("%Y-%m-%d")
+            if window_start_dt <= created_at < window_end_dt:
+                key = to_business_time(created_at).strftime("%Y-%m-%d")
                 sub_day_map[key] = sub_day_map.get(key, 0.0) + PRO_PRICES.get(months, 0)
                 sub_day_count_map[key] = sub_day_count_map.get(key, 0) + 1
 
@@ -352,9 +350,9 @@ def platform_stats(
         # spans 2+ calendar months; trailing 12 months otherwise (the
         # window is year-wide here, so this is just a safety clamp).
         if explicit_range:
-            start_local = to_business_time(window_start_dt.replace(tzinfo=timezone.utc))
+            start_local = to_business_time(window_start_dt)
             s_idx = start_local.year * 12 + (start_local.month - 1)
-            end_local = to_business_time(window_end_dt.replace(tzinfo=timezone.utc))
+            end_local = to_business_time(window_end_dt)
             e_idx = end_local.year * 12 + (end_local.month - 1)
             if e_idx > s_idx:  # 2+ calendar months → scope the series
                 start_month_index, end_month_index = s_idx, e_idx
@@ -366,12 +364,10 @@ def platform_stats(
         # >1-year window still shows the most recent year)
         first_index = max(start_month_index, end_month_index - 11)
         back_year, back_month = divmod(first_index, 12)
-        first_bucket_start = (
-            datetime(back_year, back_month + 1, 1, tzinfo=business_tz)
-            .astimezone(timezone.utc)
-            .replace(tzinfo=None)
+        first_bucket_start = datetime(back_year, back_month + 1, 1, tzinfo=business_tz).astimezone(
+            timezone.utc
         )
-        month_expr = BusinessMonth(Order.created_at)
+        month_expr = business_month(Order.created_at)
         gmv_rows = (
             db.query(
                 month_expr,
@@ -390,7 +386,7 @@ def platform_stats(
             for month, count, total in gmv_rows
         }
 
-        seller_month_expr = BusinessMonth(Seller.created_at)
+        seller_month_expr = business_month(Seller.created_at)
         signup_rows = (
             db.query(seller_month_expr, func.count(Seller.id))
             .filter(
@@ -511,7 +507,7 @@ def seller_shop_stats(
 
     # Daily buckets with revenue (business-local days, full window —
     # quiet days show as zero so the chart keeps its shape)
-    day_expr = BusinessDay(Order.created_at)
+    day_expr = business_day(Order.created_at)
     daily_rows = (
         db.query(
             day_expr,
@@ -734,7 +730,7 @@ def handle_upgrade_request(
         if (
             seller.plan == "pro"
             and current_expiry is not None
-            and as_aware(current_expiry) > now
+            and current_expiry > now
         ):
             base = current_expiry
         else:
@@ -881,7 +877,7 @@ def update_seller_plan(
         if (
             was_pro
             and current_expiry is not None
-            and as_aware(current_expiry) > now
+            and current_expiry > now
         ):
             base = current_expiry
         else:

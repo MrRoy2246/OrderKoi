@@ -60,10 +60,10 @@ pytest
 ## Database
 
 - Dev: **PostgreSQL 17** (local install, port **5433** — PG 15 owns 5432). Dedicated `orderkoi` role + database; the app never uses the postgres superuser.
-- All connection settings live in `.env` (`PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`) — change the user, password, host, or port there and the app follows, no code change. A full `DATABASE_URL` overrides the parts; leaving everything unset falls back to a dev SQLite file (legacy zero-setup mode).
+- All connection settings live in `.env` (`PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`) — change the user, password, host, or port there and the app follows, no code change. A full `DATABASE_URL` overrides the parts; one of the two must be set (the app refuses to boot without a database).
 - Schema is managed by **Alembic**: set up or update a database with `alembic upgrade head` (from `backend/`). After changing a model in `app/models.py`, generate a migration with `alembic revision --autogenerate -m "..."`, review it, then `upgrade head`.
 - Free plan: one-time 15-order allowance, configured via `free_plan_orders` in `app/config.py` (defaults from `.env`)
-- Tests run on in-memory SQLite (fast, portable) — the date-grouping SQL is dialect-portable (`BusinessDay`/`BusinessMonth` in `app/timezone.py`), with dedicated compilation tests.
+- Tests run on the same engine as production, in a dedicated **`orderkoi_test`** database (selected via `PG_DATABASE` env override in `tests/conftest.py`; auto-created on first run — needs `CREATEDB` on the role, granted once: `ALTER ROLE orderkoi CREATEDB;`). Dev data is never touched; the schema is created/dropped per session.
 
 ## Backups
 
@@ -71,8 +71,7 @@ pytest
 python -m scripts.backup_db        # from backend/ — also run by Task Scheduler daily at 3:07 AM
 ```
 
-- PostgreSQL mode: `pg_dump` custom format → `backend/backups/orderkoi-YYYYMMDD-HHMMSS.dump` (restore with `pg_restore`). Credentials come from `.env`; `pg_dump` is located via `PG_BINDIR`, PATH, or the standard install dir.
-- Legacy SQLite mode: online backup API → `orderkoi-*.db` (safe while the server runs, WAL included).
+- `pg_dump` custom format → `backend/backups/orderkoi-YYYYMMDD-HHMMSS.dump` (restore with `pg_restore`). Credentials come from `.env`; `pg_dump` is located via `PG_BINDIR`, PATH, or the standard install dir.
 - Keeps the newest 14 backups, deletes older ones automatically
 - The Windows scheduled task is **"OrderKoi DB backup"** — view it in Task Scheduler or `schtasks /query /tn "OrderKoi DB backup"`
 
@@ -98,7 +97,7 @@ backend/
 ├── app/
 │   ├── main.py        # FastAPI app, routes registration, CORS, security headers, /health + /ready
 │   ├── config.py      # Settings from .env (incl. free_plan_orders = 15)
-│   ├── database.py    # DB engine & session (PostgreSQL pool / SQLite fallback)
+│   ├── database.py    # DB engine & session (PostgreSQL pool, UTC-pinned sessions)
 │   ├── email.py       # SMTP send — background threads + retry, console fallback
 │   ├── emails.py      # Email templates (welcome/verify, reset, order received, status change)
 │   ├── login_throttle.py  # Per-account lockout after repeated failed logins
@@ -117,11 +116,8 @@ backend/
 ├── scripts/
 │   ├── seed_admin.py  # Bootstrap an admin account
 │   ├── make_admin.py  # Promote an existing seller to admin
-│   ├── migrate.py     # LEGACY SQLite schema migrations (pre-Alembic)
-│   ├── sqlite_to_postgres.py  # One-off dev-data migration (id-preserving)
-│   ├── backup_db.py   # Timestamped DB backup (keep 14) — runs daily via Task Scheduler
-│   ├── audit_probe.py # Manual audit helpers
-│   └── bench_stats.py # Performance checks for the stats endpoints
+│   ├── backup_db.py   # Timestamped pg_dump backup (keep 14) — runs daily via Task Scheduler
+│   └── audit_probe.py # Manual audit helpers
 ├── backups/           # Backup output (gitignored)
 ├── tests/             # pytest suite (177 tests)
 ├── requirements.txt

@@ -19,15 +19,16 @@ class Settings(BaseSettings):
     api_version: str = "1.0.0"
     environment: str = "development"
 
-    # Database — two ways to configure, in priority order:
+    # Database (PostgreSQL) — two ways to configure, in priority order:
     #
     #   1. DATABASE_URL — one full connection string, e.g.
     #      postgresql+psycopg://user:pass@localhost:5433/orderkoi
-    #      (or sqlite:///./orderkoi.db for zero-setup development)
     #
     #   2. The discrete PG_* variables below — composed into a URL
     #      automatically. Change the user, password, host, or port in
     #      .env and the app follows without any code change.
+    #
+    # One of the two must be set; the app refuses to boot otherwise.
     database_url: str = ""
     pg_host: str = "localhost"
     pg_port: int = 5432
@@ -37,16 +38,20 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _compose_database_url(self) -> "Settings":
-        """Resolve the final DATABASE_URL: explicit URL wins, else the
-        PG_* parts are composed. Default (nothing set) is dev SQLite."""
+        """Resolve the final connection URL: an explicit DATABASE_URL
+        wins, else the PG_* parts are composed. Missing both is a
+        configuration error — fail at boot, not at first query."""
         if not self.database_url:
-            if self.pg_password:
-                self.database_url = (
-                    f"postgresql+psycopg://{quote_plus(self.pg_user)}:{quote_plus(self.pg_password)}"
-                    f"@{self.pg_host}:{self.pg_port}/{self.pg_database}"
+            if not self.pg_password:
+                raise ValueError(
+                    "No database configured: set PG_PASSWORD "
+                    "(+ PG_HOST/PG_PORT/PG_DATABASE/PG_USER) or DATABASE_URL "
+                    "in .env — see .env.example"
                 )
-            else:
-                self.database_url = "sqlite:///./orderkoi.db"
+            self.database_url = (
+                f"postgresql+psycopg://{quote_plus(self.pg_user)}:{quote_plus(self.pg_password)}"
+                f"@{self.pg_host}:{self.pg_port}/{self.pg_database}"
+            )
         return self
 
     # Security

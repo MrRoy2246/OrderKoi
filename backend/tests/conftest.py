@@ -1,29 +1,60 @@
-"""Shared pytest fixtures: isolated DB, test client, authenticated seller."""
+"""Shared pytest fixtures: isolated PostgreSQL test database, test
+client, authenticated seller.
+
+The suite runs against the same engine the app uses in production
+(PostgreSQL), in a dedicated `orderkoi_test` database — dev data is
+never touched, and dialect-specific SQL is exercised for real.
+"""
 
 import os
 
 # Must be set before the app reads its settings — disables rate
-# limiting for the suite (it has its own dedicated unit tests), and
-# forces the email console backend so fixture signups never attempt a
-# real SMTP connection (backend/.env may carry live SMTP credentials).
+# limiting for the suite (it has its own dedicated unit tests), forces
+# the email console backend so fixture signups never attempt a real
+# SMTP connection (backend/.env may carry live SMTP credentials), and
+# redirects every connection to the throwaway test database (real env
+# vars take priority over .env, so no file editing is needed).
 os.environ["ENVIRONMENT"] = "test"
 os.environ["SMTP_HOST"] = ""
+os.environ["PG_DATABASE"] = "orderkoi_test"
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy import create_engine, text  # noqa: E402
+from sqlalchemy.exc import OperationalError  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
-from sqlalchemy.pool import StaticPool  # noqa: E402
 
+import app.models  # noqa: E402,F401 — registers every table on Base.metadata
+from app.config import get_settings  # noqa: E402
 from app.database import Base, get_db  # noqa: E402
 from app.main import app  # noqa: E402
 
-# In-memory SQLite shared across the suite via a single connection
-engine = create_engine(
-    "sqlite://",
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
+settings = get_settings()
+
+
+def _ensure_test_database() -> None:
+    """Create the test database if it doesn't exist yet (fresh
+    machines). Needs CREATEDB on the app role — see docs/BACKEND_GUIDE."""
+    try:
+        probe = create_engine(settings.database_url)
+        with probe.connect():
+            pass
+        probe.dispose()
+        return
+    except OperationalError:
+        pass  # database missing — create it below
+
+    # Connect to the maintenance database and create it once
+    base_url, _, _ = settings.database_url.rpartition("/")
+    admin = create_engine(f"{base_url}/postgres", isolation_level="AUTOCOMMIT")
+    with admin.connect() as conn:
+        conn.execute(text(f'CREATE DATABASE "{settings.pg_database}"'))
+    admin.dispose()
+
+
+_ensure_test_database()
+
+engine = create_engine(settings.database_url, pool_pre_ping=True)
 TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 

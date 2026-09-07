@@ -1,13 +1,12 @@
-"""Backup the dev/production database to a timestamped file.
+"""Backup the PostgreSQL database to a timestamped file.
 
-PostgreSQL (DATABASE_URL / PG_* in .env): pg_dump in custom format
-(-Fc) — consistent snapshot, restore with pg_restore. Credentials and
-host/port come from the same .env the app reads, so rotating the DB
-user or password needs no change here.
+pg_dump in custom format (-Fc) — a consistent snapshot, restore with:
+    pg_restore -h <host> -U <user> -d <db> --clean orderkoi-<timestamp>.dump
 
-SQLite (legacy / zero-setup dev): sqlite3's online backup API (not a
-file copy), so a WAL checkpoint is included and a backup taken while
-the server is running is still consistent.
+Credentials and host/port come from the same .env the app reads
+(DATABASE_URL / PG_*), so rotating the DB user or password needs no
+change here. pg_dump is located via PG_BINDIR, PATH, or the standard
+Windows install directory.
 
 Usage (from backend/):
     python -m scripts.backup_db [backup_dir]
@@ -26,7 +25,6 @@ Windows Task Scheduler (daily 3am):
 import os
 import shutil
 import subprocess
-import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -51,8 +49,7 @@ def _find_pg_dump() -> str:
     if found:
         return found
     if _PG_INSTALL_ROOT.exists():
-        candidates = sorted(_PG_INSTALL_ROOT.iterdir(), reverse=True)
-        for version_dir in candidates:
+        for version_dir in sorted(_PG_INSTALL_ROOT.iterdir(), reverse=True):
             exe = version_dir / "bin" / "pg_dump.exe"
             if exe.exists():
                 return str(exe)
@@ -62,9 +59,14 @@ def _find_pg_dump() -> str:
     )
 
 
-def _backup_postgres(database_url: str, backup_dir: Path) -> Path:
-    url = make_url(database_url)
+def backup(backup_dir: Path = DEFAULT_BACKUP_DIR) -> Path:
+    from app.config import get_settings
+
+    url = make_url(get_settings().database_url)
+
+    backup_dir.mkdir(parents=True, exist_ok=True)
     dest = backup_dir / f"orderkoi-{datetime.now().strftime('%Y%m%d-%H%M%S')}.dump"
+
     env = {**os.environ, "PGPASSWORD": url.password or ""}
     command = [
         _find_pg_dump(),
@@ -78,44 +80,14 @@ def _backup_postgres(database_url: str, backup_dir: Path) -> Path:
     ]
     result = subprocess.run(command, env=env, capture_output=True, text=True)
     if result.returncode != 0:
+        dest.unlink(missing_ok=True)
         raise RuntimeError(f"pg_dump failed: {result.stderr.strip()}")
     return dest
 
 
-def _backup_sqlite(backup_dir: Path) -> Path:
-    db_path = BACKEND_DIR / "orderkoi.db"
-    if not db_path.exists():
-        raise FileNotFoundError(f"Database not found: {db_path}")
-
-    dest = backup_dir / f"orderkoi-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db"
-
-    # The backup API copies page-by-page inside SQLite — consistent even
-    # with WAL journaling and a live writer, unlike a raw file copy.
-    source = sqlite3.connect(db_path)
-    target = sqlite3.connect(dest)
-    try:
-        source.backup(target)
-    finally:
-        target.close()
-        source.close()
-    return dest
-
-
-def backup(backup_dir: Path = DEFAULT_BACKUP_DIR) -> Path:
-    from app.config import get_settings
-
-    database_url = get_settings().database_url
-
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    if database_url.startswith("postgresql"):
-        return _backup_postgres(database_url, backup_dir)
-    return _backup_sqlite(backup_dir)
-
-
 def prune(backup_dir: Path = DEFAULT_BACKUP_DIR, keep: int = KEEP_BACKUPS) -> list[Path]:
     """Delete all but the newest `keep` backups. Returns deleted paths."""
-    backups = sorted(backup_dir.glob("orderkoi-*.dump")) + sorted(backup_dir.glob("orderkoi-*.db"))
-    backups = sorted(set(backups), key=lambda p: p.name)
+    backups = sorted(backup_dir.glob("orderkoi-*.dump"), key=lambda p: p.name)
     stale = backups[:-keep] if len(backups) > keep else []
     for old in stale:
         old.unlink()

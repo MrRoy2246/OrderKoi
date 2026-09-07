@@ -238,12 +238,6 @@ def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db
     summary="Set a new password using a reset token",
 )
 def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)) -> dict:
-    from datetime import timezone
-
-    def as_aware(value):
-        """SQLite returns naive datetimes — normalize before comparing."""
-        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
-
     token_hash = hashlib.sha256(payload.token.encode()).hexdigest()
     record = (
         db.query(PasswordResetToken).filter(PasswordResetToken.token_hash == token_hash).first()
@@ -257,7 +251,7 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     if (
         record is None
         or record.used_at is not None
-        or as_aware(record.expires_at) < utcnow()
+        or record.expires_at < utcnow()
     ):
         raise invalid
 
@@ -290,12 +284,6 @@ def verify_email(
 ) -> dict:
     """Mark the account as email-verified so login is allowed. The link
     arrives in the signup email; tokens are single-use and expire."""
-    from datetime import timezone
-
-    def as_aware(value):
-        """SQLite returns naive datetimes — normalize before comparing."""
-        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
-
     if len(token) < 10 or len(token) > 128:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -327,7 +315,7 @@ def verify_email(
             return {"detail": "Your email is already verified. You can now log in."}
         raise invalid
 
-    if as_aware(record.expires_at) < utcnow():
+    if record.expires_at < utcnow():
         raise invalid
 
     seller = db.get(Seller, record.seller_id)

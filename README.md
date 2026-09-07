@@ -53,7 +53,7 @@ OrderKoi is an order-tracking platform for small online sellers (F-commerce / Fa
 - [x] Phase 7.13 — Free-plan allowance (15 one-time), limit experience, seller history (2026-09-05)
 - [x] Phase 8a — Real SMTP email: verification, order & status emails, background send with retry (2026-09-06)
 - [x] Phase 8a+ — Pre-deploy hardening: JWT invalidation on reset, login lockout, security headers, /ready, honeypot, 404, Privacy/Terms, Playwright E2E, daily DB backups, favicon/og-image/robots.txt (2026-09-06)
-- [x] Phase 8b — PostgreSQL shift: dedicated orderkoi DB + env-driven credentials, Alembic migrations, dialect-portable date SQL, dev data migrated, pg_dump backups (2026-09-07)
+- [x] Phase 8b — PostgreSQL shift: dedicated orderkoi DB + env-driven credentials, Alembic migrations, dev data migrated, pg_dump backups, SQLite fully removed incl. tests-on-PG (2026-09-07)
 - [ ] Phase 8c — Dockerize & deploy (after 8b)
 - [ ] Phase 8d — Launch guardrails: real email provider, Sentry, uptime monitoring, domain
 - [ ] Phase 8e — Fast-follow hardening: admin MFA, pagination, Redis limiter, load test

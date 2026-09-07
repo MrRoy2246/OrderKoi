@@ -11,14 +11,8 @@ from app.database import Base
 
 
 def utcnow() -> datetime:
-    """Timezone-aware UTC now (naive datetimes cause subtle bugs)."""
+    """Timezone-aware UTC now (every stored timestamp is aware timestamptz)."""
     return datetime.now(timezone.utc)
-
-
-def as_aware(value: datetime) -> datetime:
-    """Normalize a stored timestamp before comparing — SQLite returns
-    naive datetimes, PostgreSQL (timestamptz) returns aware ones."""
-    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
 
 def pro_plan_active(seller: "Seller") -> bool:
@@ -31,7 +25,7 @@ def pro_plan_active(seller: "Seller") -> bool:
         return False
     if seller.plan_expires_at is None:
         return True  # no expiry set — lifetime/legacy Pro
-    return as_aware(seller.plan_expires_at) >= utcnow()
+    return seller.plan_expires_at >= utcnow()
 
 
 class OrderStatus(str, enum.Enum):
@@ -241,7 +235,7 @@ class Order(Base):
     customer_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     customer_address: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
-    # [{name, quantity, price}] — JSON works on SQLite and PostgreSQL
+    # [{name, quantity, price}] — stored as JSONB-friendly JSON
     items: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     # Computed server-side from items — never trusted from the client
     total_price: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)

@@ -33,7 +33,7 @@ from app.schemas import (
     StatsSummary,
 )
 from app.timezone import (
-    BusinessDay,
+    business_day,
     business_today,
     day_bounds_utc,
     to_business_time,
@@ -383,7 +383,7 @@ def stats_summary(
     else:  # all — cap the chart at the most recent 30 days
         window_days, window_start, window_end = 30, today - timedelta(days=29), today
 
-    # Day boundaries in the business timezone, converted to naive UTC —
+    # Day boundaries in the business timezone, as aware-UTC instants
     # exactly how created_at is stored, so comparisons are exact.
     window_start_dt, _ = day_bounds_utc(window_start)
     _, window_end_dt = day_bounds_utc(window_end)  # include the end date's full day
@@ -435,11 +435,11 @@ def stats_summary(
 
     # Group by the *business-local* date: an order at 20:00 UTC is
     # 02:00 next day in Dhaka and belongs on that day's bar. The
-    # BusinessDay construct compiles the shift into SQL for the active
-    # dialect (no per-row Python).
+    # business_day() expression shifts and casts in SQL (no per-row
+    # Python).
     # Revenue rides along so the same series powers a money chart —
     # cancelled orders count toward nothing (no bar, no money).
-    day_expr = BusinessDay(Order.created_at)
+    day_expr = business_day(Order.created_at)
     daily_rows = (
         db.query(
             day_expr,

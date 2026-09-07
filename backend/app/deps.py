@@ -5,7 +5,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Seller, as_aware
+from app.models import Seller
 from app.security import decode_access_token, token_issued_at
 
 # Swagger shows a 🔒 Authorize button; the frontend sends
@@ -39,7 +39,7 @@ def get_current_seller(
     # token is presumed stolen and stays rejected until re-login.
     if seller.token_invalid_before is not None:
         issued_at = token_issued_at(credentials.credentials)
-        if issued_at is not None and issued_at < as_aware(seller.token_invalid_before):
+        if issued_at is not None and issued_at < seller.token_invalid_before:
             raise unauthorized
 
     return seller
