@@ -63,24 +63,63 @@ def _add_months(moment: datetime, months: int) -> datetime:
     return moment.replace(year=year, month=month, day=day)
 
 
-def _subscription_revenue(db: Session, since: datetime | None = None) -> float:
-    """Total money sellers paid for Pro — comp (free) grants excluded.
-
-    Each paid ledger entry's months map to a price from the current
-    settings (env-driven — GET /pricing shows the same numbers);
-    entries with an unknown duration (data oddities) contribute
-    nothing. `since` (aware UTC) limits the sum to recent entries,
-    e.g. the 30-day pulse.
-    """
-    prices = pro_prices()
-    query = db.query(SubscriptionEvent.months).filter(
+def _paid_event_filters() -> tuple:
+    """WHERE conditions shared by every paid-ledger query: subscription
+    or renewal entries, not comped, with a known duration."""
+    return (
         SubscriptionEvent.event.in_(["subscribed", "renewed"]),
         SubscriptionEvent.comp.is_(False),
         SubscriptionEvent.months.isnot(None),
     )
+
+
+def _price_expr(prices: dict[int, int]):
+    """SQL: the current price of a ledger entry's duration. Entries with
+    an unknown duration (data oddities) contribute nothing — same rule
+    the Python-side summation always had."""
+    return case(
+        *[(SubscriptionEvent.months == months, price) for months, price in prices.items()],
+        else_=0,
+    )
+
+
+def _subscription_revenue(db: Session, since: datetime | None = None) -> float:
+    """Total money sellers paid for Pro — comp (free) grants excluded,
+    valued at current prices (env-driven — GET /pricing shows the same
+    numbers), summed entirely in SQL so the ledger can grow forever
+    without this getting heavier. `since` (aware UTC) limits the sum to
+    recent entries, e.g. a 30-day pulse."""
+    query = db.query(
+        func.coalesce(func.sum(_price_expr(pro_prices())), 0.0)
+    ).filter(*_paid_event_filters())
     if since is not None:
         query = query.filter(SubscriptionEvent.created_at >= since)
-    return float(sum(prices.get(months, 0) for (months,) in query.all()))
+    return float(query.scalar())
+
+
+def _paid_subscription_series(
+    db: Session, key_expr, window: tuple[datetime, datetime | None] | None = None
+) -> dict[str, tuple[int, float]]:
+    """Paid ledger entries grouped by a business-local day/month key
+    expression, valued at current prices: {key: (count, money)}.
+
+    Grouping and pricing both happen in SQL. `window` is an optional
+    [start, end) pair of aware-UTC bounds on created_at (end may be
+    None for "from start onward")."""
+    query = db.query(
+        key_expr,
+        func.count(SubscriptionEvent.id),
+        func.coalesce(func.sum(_price_expr(pro_prices())), 0.0),
+    ).filter(*_paid_event_filters())
+    if window is not None:
+        start_dt, end_dt = window
+        query = query.filter(SubscriptionEvent.created_at >= start_dt)
+        if end_dt is not None:
+            query = query.filter(SubscriptionEvent.created_at < end_dt)
+    return {
+        str(key): (int(count), round(float(value), 2))
+        for key, count, value in query.group_by(key_expr).all()
+    }
 
 
 @router.get(
@@ -270,28 +309,10 @@ def platform_stats(
 
     # Subscription money — what the sellers actually paid for Pro
     # (comp grants don't count). The all-time total anchors the
-    # "Your earnings" KPI's context line.
+    # "Your earnings" KPI's context line; the chart series are built
+    # per-branch below, grouped in SQL (_paid_subscription_series) so
+    # the ledger never loads into Python.
     subscription_revenue_total = _subscription_revenue(db)
-
-    # Monthly paid-Pro money (spans the selected window, capped at 12
-    # months — the "your earnings" chart). Comp grants excluded, priced
-    # per entry.
-    paid_events = (
-        db.query(SubscriptionEvent.created_at, SubscriptionEvent.months)
-        .filter(
-            SubscriptionEvent.event.in_(["subscribed", "renewed"]),
-            SubscriptionEvent.comp.is_(False),
-            SubscriptionEvent.months.isnot(None),
-        )
-        .all()
-    )
-    prices = pro_prices()
-    sub_month_map: dict[str, float] = {}
-    sub_month_count_map: dict[str, int] = {}
-    for created_at, months in paid_events:
-        key = to_business_time(created_at).strftime("%Y-%m")
-        sub_month_map[key] = sub_month_map.get(key, 0.0) + prices.get(months, 0)
-        sub_month_count_map[key] = sub_month_count_map.get(key, 0) + 1
 
     # ---- Chart series (business-timezone buckets, oldest first) ----
 
@@ -355,14 +376,12 @@ def platform_stats(
             .all()
         )
         signup_map = {str(day): int(count) for day, count in signup_day_rows}
-        # Paid-Pro money by day, from the ledger
-        sub_day_map: dict[str, float] = {}
-        sub_day_count_map: dict[str, int] = {}
-        for created_at, months in paid_events:
-            if window_start_dt <= created_at < window_end_dt:
-                key = to_business_time(created_at).strftime("%Y-%m-%d")
-                sub_day_map[key] = sub_day_map.get(key, 0.0) + prices.get(months, 0)
-                sub_day_count_map[key] = sub_day_count_map.get(key, 0) + 1
+        # Paid-Pro money by day, from the ledger (grouped in SQL)
+        sub_day_map = _paid_subscription_series(
+            db,
+            business_day(SubscriptionEvent.created_at),
+            window=(window_start_dt, window_end_dt),
+        )
 
         # Shared series of day keys — one pass builds all three series
         day_keys = [(window_start + timedelta(days=i)).isoformat() for i in range(window_days)]
@@ -388,8 +407,8 @@ def platform_stats(
             ChartBucket(
                 date=key,
                 month=key,
-                count=sub_day_count_map.get(key, 0),
-                value=round(sub_day_map.get(key, 0.0), 2),
+                count=sub_day_map.get(key, (0, 0.0))[0],
+                value=sub_day_map.get(key, (0, 0.0))[1],
             )
             for key in day_keys
         ]
@@ -446,6 +465,13 @@ def platform_stats(
         )
         signup_map = {str(month): int(count) for month, count in signup_rows}
 
+        # Paid-Pro money by month for the same span, grouped in SQL
+        sub_month_map = _paid_subscription_series(
+            db,
+            business_month(SubscriptionEvent.created_at),
+            window=(first_bucket_start, None),
+        )
+
         # Build the month series covering the window (oldest first)
         months_series: list[ChartBucket] = []
         cursor = first_index
@@ -461,8 +487,8 @@ def platform_stats(
         subscription_monthly = [
             ChartBucket(
                 month=m.month,
-                count=sub_month_count_map.get(m.month, 0),
-                value=round(sub_month_map.get(m.month, 0.0), 2),
+                count=sub_month_map.get(m.month, (0, 0.0))[0],
+                value=sub_month_map.get(m.month, (0, 0.0))[1],
             )
             for m in months_series
         ]
