@@ -4,18 +4,21 @@ Development: SMTP not configured — emails are printed to the server log
 (the "console backend"). Production: set SMTP_* variables in .env and
 real email is sent over TLS.
 
-Delivery happens on a background thread: callers (API request handlers)
-hand the message off and return immediately — a slow or hung SMTP
-server must never add latency to an API response, least of all the
-public order form's. Each send retries a few times with growing
-backoff; a final failure is logged loudly (there is no dead-letter
-queue at this stage — the log is the operator's signal).
+Delivery happens on a small fixed worker pool: callers (API request
+handlers) hand the message off and return immediately — a slow or hung
+SMTP server must never add latency to an API response, least of all
+the public order form's. A bounded pool (not a thread per send) keeps
+a traffic burst from spawning unbounded threads and SMTP connections;
+surplus messages wait their turn in the pool's queue. Each send
+retries a few times with growing backoff; a final failure is logged
+loudly (there is no dead-letter queue at this stage — the log is the
+operator's signal).
 """
 
 import logging
 import smtplib
-import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from email.message import EmailMessage
 
 from app.config import get_settings
@@ -29,6 +32,24 @@ settings = get_settings()
 # majority of transient failures without delaying "giving up" much.
 SEND_ATTEMPTS = 3
 RETRY_DELAYS_SECONDS = (2, 10)  # before attempt 2 and 3
+
+# Fixed number of concurrent SMTP senders. 4 spreads retries across
+# the pool without hammering the relay; queued messages are tiny, so a
+# burst just builds a short in-memory queue instead of a thread bomb.
+EMAIL_WORKERS = 4
+
+# Created lazily so importing this module never spins up threads (the
+# console backend, tests, and scripts don't need a pool at all).
+_executor: ThreadPoolExecutor | None = None
+
+
+def _get_executor() -> ThreadPoolExecutor:
+    global _executor
+    if _executor is None:
+        _executor = ThreadPoolExecutor(
+            max_workers=EMAIL_WORKERS, thread_name_prefix="orderkoi-email"
+        )
+    return _executor
 
 
 def _send_now(to: str, subject: str, body: str) -> None:
@@ -74,8 +95,9 @@ def _deliver_with_retry(to: str, subject: str, body: str) -> None:
 def send_email(to: str, subject: str, body: str) -> None:
     """Queue an email for delivery. Never raises — email problems must
     not break the request that triggered them, and must not delay it
-    either: real SMTP runs on a daemon thread; the console backend
-    (development, no SMTP_HOST) logs inline so dev output stays ordered.
+    either: real SMTP runs on the fixed worker pool; the console
+    backend (development, no SMTP_HOST) logs inline so dev output
+    stays ordered.
     """
     if not settings.smtp_host:
         logger.info(
@@ -83,9 +105,4 @@ def send_email(to: str, subject: str, body: str) -> None:
         )
         return
 
-    threading.Thread(
-        target=_deliver_with_retry,
-        args=(to, subject, body),
-        name=f"email-{to}",
-        daemon=True,
-    ).start()
+    _get_executor().submit(_deliver_with_retry, to, subject, body)
