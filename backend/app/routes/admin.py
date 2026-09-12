@@ -908,32 +908,30 @@ def list_subscription_events(
     db: Session = Depends(get_db),
     admin: Seller = Depends(get_current_admin),  # noqa: ARG001 — guards access
 ) -> list[dict]:
-    events = (
-        db.query(SubscriptionEvent)
+    # The seller behind each entry is JOINed in — one query for the
+    # whole page, not one per row (the old per-row lookup was an N+1:
+    # 200 extra queries on every call).
+    rows = (
+        db.query(SubscriptionEvent, Seller)
+        .join(Seller, Seller.id == SubscriptionEvent.seller_id)
         .order_by(SubscriptionEvent.created_at.desc(), SubscriptionEvent.id.desc())
         .limit(200)
         .all()
     )
-
-    result = []
-    for event in events:
-        seller = db.get(Seller, event.seller_id)
-        if seller is None:
-            continue
-        result.append(
-            {
-                "id": event.id,
-                "seller_id": seller.id,
-                "event": event.event,
-                "months": event.months,
-                "comp": event.comp,
-                "note": event.note,
-                "created_at": event.created_at,
-                "store_name": seller.store_name,
-                "seller_email": seller.email,
-            }
-        )
-    return result
+    return [
+        {
+            "id": event.id,
+            "seller_id": seller.id,
+            "event": event.event,
+            "months": event.months,
+            "comp": event.comp,
+            "note": event.note,
+            "created_at": event.created_at,
+            "store_name": seller.store_name,
+            "seller_email": seller.email,
+        }
+        for event, seller in rows
+    ]
 
 
 @router.patch(
