@@ -198,7 +198,9 @@ export default function AdminOverview() {
     api.admin
       .sellers()
       .then((data) => {
-        setSellers(data);
+        // Envelope shape: {sellers, total, limit, offset} — the table
+        // wants the rows only.
+        setSellers(data.sellers);
         setSellersLoading(false);
       })
       .catch((err) => {
