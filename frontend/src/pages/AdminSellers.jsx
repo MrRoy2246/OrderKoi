@@ -24,6 +24,11 @@ function PlanBadge({ plan, expiresAt }) {
   );
 }
 
+function RoleBadge({ role }) {
+  if (role !== "admin") return null;
+  return <span className="badge badge--shipped">Admin</span>;
+}
+
 /** Active Pro — same rule as the backend's plan filter: a Pro plan with a
  * past expiry counts as Free. Keeps badges, actions, and the tab counts
  * in sync with what the server returned for the current filter. */

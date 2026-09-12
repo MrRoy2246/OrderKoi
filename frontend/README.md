@@ -23,7 +23,7 @@ npm run dev     # http://localhost:5173 — backend must be running on :8000
 | `npm run build` | Production build → `dist/` (what gets deployed) |
 | `npm run preview` | Serve the build locally |
 | `npm run lint` | Oxlint |
-| `npx playwright test` | E2E smoke suite (5 tests; dev servers must be running) |
+| `npx playwright test` | E2E smoke suite (7 tests; dev servers must be running) |
 
 ## Notes for this project
 

@@ -60,7 +60,7 @@ OrderKoi is an order-tracking platform for small online sellers (F-commerce / Fa
 - [ ] Phase 8d — Launch guardrails: real email provider, Sentry, uptime monitoring, domain
 - [ ] Phase 8e — Fast-follow hardening: admin MFA, Redis limiter, load test (admin pagination + SQL aggregation + indexes done 2026-09-12)
 
-**Test health:** backend 193/193 · Playwright E2E 5/5 · build + lint clean.
+**Test health:** backend 193/193 · Playwright E2E 7/7 · build + lint clean.
 
 ## Run with Docker
 

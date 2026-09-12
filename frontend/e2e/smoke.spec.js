@@ -8,6 +8,8 @@ import { expect, test } from "@playwright/test";
 
 const SELLER_EMAIL = "test@gmail.com";
 const SELLER_PASSWORD = "test123456789";
+const ADMIN_EMAIL = "abin@test.com";
+const ADMIN_PASSWORD = "secretpass123";
 const API_URL = "http://localhost:8000";
 
 test("landing page renders", async ({ page }) => {
@@ -82,4 +84,35 @@ test("public form order → confirmation → tracking page", async ({ page }) =>
   await expect(page).toHaveURL(/\/track\//);
   await expect(page.getByText("E2E Smoke Customer")).toBeVisible();
   await expect(page.getByText("placed", { exact: false }).first()).toBeVisible();
+});
+
+// Admin panel smoke: two admin-page bugs shipped unnoticed before this
+// existed (envelope crash on /admin, missing RoleBadge blanking the
+// sellers page) — both rendered fine in API tests and crashed only in
+// the browser. These guard every admin page the platform owner uses.
+test("admin login → overview renders with seller data", async ({ page }) => {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(ADMIN_EMAIL);
+  await page.getByLabel("Password").fill(ADMIN_PASSWORD);
+  await page.getByRole("button", { name: "Log in" }).click();
+
+  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page.getByRole("heading", { name: "Platform Overview" })).toBeVisible();
+  // The dev DB always has sellers — the newest-sellers table must list them
+  await expect(page.locator("table tbody tr").first()).toBeVisible();
+});
+
+test("admin sellers page lists sellers (not blank)", async ({ page }) => {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(ADMIN_EMAIL);
+  await page.getByLabel("Password").fill(ADMIN_PASSWORD);
+  await page.getByRole("button", { name: "Log in" }).click();
+  await expect(page).toHaveURL(/\/admin$/);
+
+  await page.getByRole("link", { name: "Sellers & Plans" }).click();
+  await expect(page).toHaveURL(/\/admin\/sellers/);
+  // The directory renders real rows — a blank page here means a crash
+  await expect(page.getByText(/accounts on your platform/)).toBeVisible();
+  await expect(page.locator("table tbody tr").first()).toBeVisible();
+  await expect(page.getByText("test", { exact: false }).first()).toBeVisible();
 });
