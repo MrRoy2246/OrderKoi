@@ -1,10 +1,10 @@
 """SQLAlchemy ORM models — the database schema."""
 
 import enum
-
 from datetime import datetime, timezone
+from decimal import Decimal
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, UniqueConstraint, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -243,8 +243,12 @@ class Order(Base):
 
     # [{name, quantity, price}] — stored as JSONB-friendly JSON
     items: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
-    # Computed server-side from items — never trusted from the client
-    total_price: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # Computed server-side from items — never trusted from the client.
+    # Numeric(12,2), not Float: taka have exactly 2 decimals, and binary
+    # floats drift (0.1 + 0.2 ≠ 0.3) — sums and revenue must be exact.
+    total_price: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0.00")
+    )
 
     notes: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 

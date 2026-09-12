@@ -10,6 +10,7 @@ import random
 import secrets
 import time
 from datetime import date, timedelta
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -84,8 +85,13 @@ def _insert_order_with_retry(db: Session, build) -> Order:
         return order
 
 
-def _compute_total(items: list[dict]) -> float:
-    return round(sum(item["quantity"] * item["price"] for item in items), 2)
+def _compute_total(items: list[dict]) -> Decimal:
+    """Exact taka: computed in Decimal (binary floats drift — 0.1 + 0.2
+    ≠ 0.3) and stored as Numeric(12,2)."""
+    total = sum(
+        Decimal(str(item["quantity"])) * Decimal(str(item["price"])) for item in items
+    )
+    return total.quantize(Decimal("0.01"))
 
 
 def _initial_history() -> list[dict]:
