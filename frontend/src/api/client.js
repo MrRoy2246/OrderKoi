@@ -244,7 +244,7 @@ export const api = {
       }),
   },
   admin: {
-    sellers: () => request("/admin/sellers"),
+    sellers: (params = {}) => request(`/admin/sellers${toQueryString(params)}`),
     stats: (params = {}) => request(`/admin/stats${toQueryString(params)}`),
     setPlan: (sellerId, plan, months, comp = false) =>
       request(`/admin/sellers/${sellerId}/plan`, {

@@ -52,18 +52,106 @@ def test_admin_cannot_create_orders(client, admin_headers):
 def test_admin_sees_all_sellers(client, admin_headers, auth_headers, seller):
     response = client.get("/admin/sellers", headers=admin_headers)
     assert response.status_code == 200
-    sellers = response.json()
-    emails = {entry["email"] for entry in sellers}
+    data = response.json()
+    # Paginated response shape
+    assert data["limit"] == 20 and data["offset"] == 0
+    assert data["total"] >= 1
+    emails = {entry["email"] for entry in data["sellers"]}
     assert seller["email"] in emails
-    admin_entry = next(entry for entry in sellers if entry["role"] == "admin")
-    assert admin_entry["plan"] == "pro"
+    # Admin accounts are platform accounts, not shops — never listed
+    assert all(entry["role"] != "admin" for entry in data["sellers"])
 
 
 def test_admin_seller_entries_include_usage(client, admin_headers, auth_headers, order):
     response = client.get("/admin/sellers", headers=admin_headers)
-    entry = next(s for s in response.json() if s["orders_count"] > 0)
+    entry = next(s for s in response.json()["sellers"] if s["orders_count"] > 0)
     assert entry["orders_count"] == 1
     assert entry["revenue"] == 1400  # the conftest order total
+
+
+def test_admin_sellers_pagination(client, admin_headers, seller):
+    """limit/offset page through the directory; pages don't overlap."""
+    page_one = client.get(
+        "/admin/sellers?limit=1&offset=0", headers=admin_headers
+    ).json()
+    assert len(page_one["sellers"]) == 1
+    assert page_one["total"] >= 1
+
+    if page_one["total"] >= 2:
+        page_two = client.get(
+            "/admin/sellers?limit=1&offset=1", headers=admin_headers
+        ).json()
+        assert len(page_two["sellers"]) == 1
+        assert page_two["sellers"][0]["id"] != page_one["sellers"][0]["id"]
+
+
+def _make_shop(db, name, email=None, plan="free", expires=None):
+    """Insert a shop directly (unique name/email) for filter tests.
+
+    Returns the row's id/email/slug captured while the session is still
+    open — the ORM object itself is detached after the caller closes."""
+    from app.models import Seller
+
+    shop = Seller(
+        email=email or f"{name.lower().replace(' ', '-')}-{uuid.uuid4().hex[:8]}@example.com",
+        hashed_password="x",
+        store_name=name,
+        store_slug=f"{name.lower()}-{uuid.uuid4().hex[:8]}",
+        role="seller",
+        plan=plan,
+        plan_expires_at=expires,
+    )
+    db.add(shop)
+    db.commit()
+    return {"id": shop.id, "email": shop.email, "store_slug": shop.store_slug}
+
+
+def test_admin_sellers_plan_filter(client, admin_headers):
+    """plan=pro returns only ACTIVE Pro (a past expiry counts as free);
+    plan=free returns everything else."""
+    from datetime import timedelta
+
+    from app.timezone import business_today, day_bounds_utc
+    from conftest import TestingSessionLocal
+
+    db = TestingSessionLocal()
+    try:
+        marker = uuid.uuid4().hex[:8]
+        pro = _make_shop(db, f"Active Pro {marker}", plan="pro",
+                         expires=business_today() + timedelta(days=30))
+        expired = _make_shop(db, f"Expired Pro {marker}", plan="pro",
+                             expires=day_bounds_utc(business_today() - timedelta(days=5))[0])
+        free = _make_shop(db, f"Plain Free {marker}", plan="free")
+    finally:
+        db.close()
+
+    pro_list = client.get(
+        f"/admin/sellers?plan=pro&q={marker}", headers=admin_headers
+    ).json()["sellers"]
+    assert {s["id"] for s in pro_list} == {pro["id"]}
+
+    free_list = client.get(
+        f"/admin/sellers?plan=free&q={marker}", headers=admin_headers
+    ).json()["sellers"]
+    assert {s["id"] for s in free_list} == {expired["id"], free["id"]}
+
+
+def test_admin_sellers_search(client, admin_headers):
+    """q matches store name, email, and slug (case-insensitive)."""
+    from conftest import TestingSessionLocal
+
+    db = TestingSessionLocal()
+    try:
+        marker = uuid.uuid4().hex[:8].upper()
+        shop = _make_shop(db, f"Searchable {marker} Store")
+    finally:
+        db.close()
+
+    for term in (f"searchable {marker}", shop["email"], shop["store_slug"]):
+        results = client.get(
+            f"/admin/sellers?q={term}", headers=admin_headers
+        ).json()["sellers"]
+        assert any(s["id"] == shop["id"] for s in results), f"q={term} missed the shop"
 
 
 def test_platform_stats(client, admin_headers, auth_headers, seller, order):

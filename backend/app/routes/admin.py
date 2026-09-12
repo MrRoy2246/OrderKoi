@@ -29,6 +29,7 @@ from app.models import (
     utcnow,
 )
 from app.schemas import (
+    AdminSellerListOut,
     AdminSellerOut,
     AdminStatsOut,
     AdminSubscriptionEventOut,
@@ -84,35 +85,92 @@ def _subscription_revenue(db: Session, since: datetime | None = None) -> float:
 
 @router.get(
     "/sellers",
-    response_model=list[AdminSellerOut],
-    summary="List all sellers with usage stats",
+    response_model=AdminSellerListOut,
+    summary="List sellers (paginated, filter by plan, searchable)",
 )
 def list_sellers(
+    plan: str = Query(
+        default="all",
+        pattern="^(all|pro|free)$",
+        description="all | pro (active) | free (incl. expired Pro)",
+    ),
+    q: str | None = Query(
+        default=None, max_length=100, description="Search store name, email, or slug"
+    ),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     admin: Seller = Depends(get_current_admin),  # noqa: ARG001 — guards access
-) -> list[dict]:
-    # Orders + revenue per seller in one grouped query
-    order_stats = {
-        seller_id: (int(count), float(revenue))
-        for seller_id, count, revenue in db.query(
-            Order.seller_id,
-            func.count(Order.id),
-            func.coalesce(func.sum(Order.total_price), 0.0),
-        )
-        .filter(Order.status != OrderStatus.CANCELLED.value)
-        .group_by(Order.seller_id)
-        .all()
-    }
+) -> dict:
+    """The seller directory, one page at a time.
 
-    sellers = db.query(Seller).order_by(Seller.created_at.desc()).all()
-    return [
-        {
-            **{column.name: getattr(seller, column.name) for column in Seller.__table__.columns},
-            "orders_count": order_stats.get(seller.id, (0, 0.0))[0],
-            "revenue": round(order_stats.get(seller.id, (0, 0.0))[1], 2),
+    Everything the AdminSellers page can filter on is applied in SQL —
+    plan tab, search, pagination — so the endpoint costs the same with
+    50 sellers or 500,000. Admin accounts are platform accounts, not
+    shops, so they never appear (the UI never showed them anyway).
+    """
+    # Active Pro, in SQL — same rule as pro_plan_active(): plan says
+    # pro AND (no expiry set, or expiry still ahead)
+    now = utcnow()
+    active_pro = (Seller.plan == "pro") & (
+        Seller.plan_expires_at.is_(None) | (Seller.plan_expires_at >= now)
+    )
+
+    query = db.query(Seller).filter(Seller.role != "admin")
+    if plan == "pro":
+        query = query.filter(active_pro)
+    elif plan == "free":
+        query = query.filter(~active_pro)
+
+    if q and q.strip():
+        pattern = f"%{q.strip()}%"
+        query = query.filter(
+            Seller.store_name.ilike(pattern)
+            | Seller.email.ilike(pattern)
+            | Seller.store_slug.ilike(pattern)
+        )
+
+    total = query.count()
+    sellers = (
+        query.order_by(Seller.created_at.desc(), Seller.id.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    # Usage stats for just this page's sellers — never the whole
+    # platform's order table in one aggregate
+    page_ids = [seller.id for seller in sellers]
+    order_stats: dict[int, tuple[int, float]] = {}
+    if page_ids:
+        order_stats = {
+            seller_id: (int(count), float(revenue))
+            for seller_id, count, revenue in db.query(
+                Order.seller_id,
+                func.count(Order.id),
+                func.coalesce(func.sum(Order.total_price), 0.0),
+            )
+            .filter(
+                Order.seller_id.in_(page_ids),
+                Order.status != OrderStatus.CANCELLED.value,
+            )
+            .group_by(Order.seller_id)
+            .all()
         }
-        for seller in sellers
-    ]
+
+    return {
+        "sellers": [
+            {
+                **{column.name: getattr(seller, column.name) for column in Seller.__table__.columns},
+                "orders_count": order_stats.get(seller.id, (0, 0.0))[0],
+                "revenue": round(order_stats.get(seller.id, (0, 0.0))[1], 2),
+            }
+            for seller in sellers
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @router.get(

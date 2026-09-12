@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, getErrorMessage } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -6,6 +6,8 @@ import AdminProModal from "../components/AdminProModal";
 import Icon from "../components/icons";
 import { SkeletonRows } from "../components/States";
 import { formatDateTime, formatTk, parseServerDate } from "../utils/orderStatus";
+
+const PAGE_SIZE = 20;
 
 const PLAN_TABS = [
   { value: "all", label: "All" },
@@ -22,51 +24,66 @@ function PlanBadge({ plan, expiresAt }) {
   );
 }
 
-/** Active Pro — same rule as the overview's counts: a Pro plan with a
- * past expiry counts as Free. Keeps tile numbers and list in sync. */
+/** Active Pro — same rule as the backend's plan filter: a Pro plan with a
+ * past expiry counts as Free. Keeps badges, actions, and the tab counts
+ * in sync with what the server returned for the current filter. */
 function isProActive(seller) {
   if (seller.plan !== "pro") return false;
   return !seller.plan_expires_at || new Date(seller.plan_expires_at) >= new Date();
 }
 
-function RoleBadge({ role }) {
-  if (role !== "admin") return null;
-  return <span className="badge badge--shipped">Admin</span>;
-}
-
-/** Seller directory for the platform admin — with plan management. */
+/** Seller directory for the platform admin — with plan management.
+ *
+ * Paginated and server-side filtered: the plan tab and search box are
+ * query parameters on /admin/sellers, so the page costs the same with
+ * 50 sellers or 500,000. */
 export default function AdminSellers() {
   const { seller: me } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   // ?plan=pro from the overview's "Pro sellers" tile seeds the filter
-  const initialTab = searchParams.get("plan") === "pro" ? "pro" : "all";
-  const [planTab, setPlanTab] = useState(initialTab);
+  const [planTab, setPlanTab] = useState(searchParams.get("plan") === "pro" ? "pro" : "all");
   const [sellers, setSellers] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   // The shop whose Pro-grant modal is open (seller object, or null)
   const [grantTarget, setGrantTarget] = useState(null);
 
+  // Debounce the search box so we don't hammer the API on every keystroke
   useEffect(() => {
-    let cancelled = false;
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setOffset(0);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
-    api.admin
-      .sellers()
-      .then((data) => {
-        if (!cancelled) setSellers(data);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(getErrorMessage(err, "Could not load sellers."));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+  const fetchSellers = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await api.admin.sellers({
+        plan: planTab,
+        q: debouncedSearch,
+        limit: PAGE_SIZE,
+        offset,
       });
+      setSellers(data.sellers);
+      setTotal(data.total);
+    } catch (err) {
+      setError(getErrorMessage(err, "Could not load sellers."));
+    } finally {
+      setLoading(false);
+    }
+  }, [planTab, debouncedSearch, offset]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  useEffect(() => {
+    fetchSellers();
+  }, [fetchSellers]);
 
   async function handleTogglePlan(seller) {
     const newPlan = seller.plan === "pro" ? "free" : "pro";
@@ -95,26 +112,13 @@ export default function AdminSellers() {
     setGrantTarget(null);
   }
 
-  if (loading) {
-    return (
-      <div className="admin-page">
-        <SkeletonRows rows={6} />
-      </div>
-    );
-  }
-
-  // Platform shops only — your own admin account isn't a seller, so it
-  // stays off the list (this also matches the overview's seller count)
-  const shops = sellers.filter((s) => s.role !== "admin");
-  const filtered =
-    planTab === "all"
-      ? shops
-      : shops.filter((s) => (planTab === "pro" ? isProActive(s) : !isProActive(s)));
+  const showingFrom = total === 0 ? 0 : offset + 1;
+  const showingTo = Math.min(offset + PAGE_SIZE, total);
 
   const planSummary =
     planTab === "all"
-      ? `${shops.length} account${shops.length === 1 ? "" : "s"} on your platform`
-      : `${filtered.length} ${planTab === "pro" ? "Pro" : "Free"} seller${filtered.length === 1 ? "" : "s"}`;
+      ? `${total} account${total === 1 ? "" : "s"} on your platform`
+      : `${total} ${planTab === "pro" ? "Pro" : "Free"} seller${total === 1 ? "" : "s"}`;
 
   return (
     <div className="admin-page">
@@ -129,6 +133,22 @@ export default function AdminSellers() {
         </div>
       )}
 
+      <div className="toolbar">
+        <div className="toolbar-search-wrap">
+          <span className="toolbar-search-icon" aria-hidden="true">
+            <Icon name="search" size={16} />
+          </span>
+          <input
+            type="search"
+            className="toolbar-search"
+            placeholder="Search store, email, or slug…"
+            aria-label="Search sellers"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+      </div>
+
       <div className="range-tabs" role="tablist" aria-label="Filter by plan">
         {PLAN_TABS.map((tab) => (
           <button
@@ -139,6 +159,7 @@ export default function AdminSellers() {
             className={`range-tab${planTab === tab.value ? " range-tab--active" : ""}`}
             onClick={() => {
               setPlanTab(tab.value);
+              setOffset(0);
               setSearchParams(tab.value === "all" ? {} : { plan: tab.value }, { replace: true });
             }}
           >
@@ -147,11 +168,17 @@ export default function AdminSellers() {
         ))}
       </div>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <SkeletonRows rows={6} />
+      ) : sellers.length === 0 ? (
         <p className="muted-note">
-          {planTab === "pro"
-            ? "No sellers on an active Pro plan yet."
-            : "No sellers on the Free plan."}
+          {debouncedSearch
+            ? "No sellers match that search."
+            : planTab === "pro"
+              ? "No sellers on an active Pro plan yet."
+              : planTab === "free"
+                ? "No sellers on the Free plan."
+                : "No sellers yet."}
         </p>
       ) : (
       <div className="table-wrap">
@@ -169,7 +196,7 @@ export default function AdminSellers() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((seller) => (
+            {sellers.map((seller) => (
               <tr key={seller.id}>
                 <td className="td-strong">
                   <Link
@@ -240,6 +267,34 @@ export default function AdminSellers() {
           </tbody>
         </table>
       </div>
+      )}
+
+      {total > PAGE_SIZE && (
+        <div className="pagination">
+          <span className="pagination-info">
+            Showing {showingFrom}–{showingTo} of {total}
+          </span>
+          <div className="pagination-buttons">
+            <button
+              type="button"
+              className="button button--outline button--small"
+              onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+              disabled={offset === 0 || loading}
+            >
+              <Icon name="chevronLeft" size={15} />
+              Previous
+            </button>
+            <button
+              type="button"
+              className="button button--outline button--small"
+              onClick={() => setOffset(offset + PAGE_SIZE)}
+              disabled={offset + PAGE_SIZE >= total || loading}
+            >
+              Next
+              <Icon name="chevronRight" size={15} />
+            </button>
+          </div>
+        </div>
       )}
 
       <p className="muted-note">

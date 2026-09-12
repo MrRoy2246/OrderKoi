@@ -75,6 +75,19 @@ class AdminSellerOut(SellerOut):
     revenue: float  # non-cancelled orders only
 
 
+class AdminSellerListOut(BaseModel):
+    """One page of the admin's seller directory.
+
+    Paginated (limit/offset) and server-side filtered (plan tab, search)
+    so the directory stays fast no matter how many sellers the platform
+    has — the client never needs the full list in one response.
+    """
+    sellers: list[AdminSellerOut]
+    total: int
+    limit: int
+    offset: int
+
+
 class RecentSignupOut(BaseModel):
     """A store in the platform's "newest sellers" list on the overview."""
 
