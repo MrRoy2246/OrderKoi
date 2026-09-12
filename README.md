@@ -35,6 +35,7 @@ OrderKoi is an order-tracking platform for small online sellers (F-commerce / Fa
 - 📊 **[ORDERKOI_STATUS.md](./ORDERKOI_STATUS.md)** — current state, launch order, open items
 - 🐍 **[docs/BACKEND_GUIDE.md](./docs/BACKEND_GUIDE.md)** — backend setup, run & test guide
 - ⚛️ **[docs/FRONTEND_GUIDE.md](./docs/FRONTEND_GUIDE.md)** — frontend setup, run & test guide
+- 🚢 **[docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)** — run with Docker, create the admin account, deploy to a server
 
 ## Status
 
@@ -55,8 +56,23 @@ OrderKoi is an order-tracking platform for small online sellers (F-commerce / Fa
 - [x] Phase 8a+ — Pre-deploy hardening: JWT invalidation on reset, login lockout, security headers, /ready, honeypot, 404, Privacy/Terms, Playwright E2E, daily DB backups, favicon/og-image/robots.txt (2026-09-06)
 - [x] Phase 8b — PostgreSQL shift: dedicated orderkoi DB + env-driven credentials, Alembic migrations, dev data migrated, pg_dump backups, SQLite fully removed incl. tests-on-PG (2026-09-07)
 - [x] Phase 8b+ — create_admin bootstrap script, pre-deploy audit, gunicorn; Pro repriced ৳350/৳1,750/৳2,900; all business values env-driven via public config endpoint (no rebuild to change an offer); full docstring sweep (2026-09-07)
-- [ ] Phase 8c — Dockerize & deploy (next)
+- [x] Phase 8c — Docker packaging: full stack compose (Postgres 17 + backend + frontend + optional Caddy auto-TLS), verified end-to-end locally (2026-09-12); deploy to a VPS + domain remains
 - [ ] Phase 8d — Launch guardrails: real email provider, Sentry, uptime monitoring, domain
-- [ ] Phase 8e — Fast-follow hardening: admin MFA, pagination, Redis limiter, load test
+- [ ] Phase 8e — Fast-follow hardening: admin MFA, Redis limiter, load test (admin pagination + SQL aggregation + indexes done 2026-09-12)
 
-**Test health:** backend 189/189 · Playwright E2E 5/5 · build + lint clean.
+**Test health:** backend 193/193 · Playwright E2E 5/5 · build + lint clean.
+
+## Run with Docker
+
+```bash
+cp .env.example .env      # fill in the values (see docs/DEPLOYMENT.md)
+docker compose up -d      # http://localhost:8090 (frontend) + http://localhost:8000 (API)
+docker compose exec backend python -m scripts.create_admin admin@example.com   # first admin — sellers sign up via the website
+```
+
+Full guide — fresh databases, the admin account, VPS deployment, backups, restore: **[docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)**.
+
+## Local development (without Docker)
+
+- Backend: `cd backend && venv/Scripts/python -m uvicorn app.main:app` → http://localhost:8000 (uses local PostgreSQL 17 on port 5433 — see `docs/BACKEND_GUIDE.md`)
+- Frontend: `cd frontend && npm run dev` → http://localhost:5173

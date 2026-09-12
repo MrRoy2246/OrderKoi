@@ -43,6 +43,26 @@ gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w 1   # production (guni
 
 > ⚠️ **On this machine, do NOT use `--reload` — it hangs.** Run the plain command above and restart the server manually after every backend edit.
 
+## Running with Docker (production shape)
+
+```bash
+docker compose up -d          # from the repo root: db + backend + frontend
+```
+
+The backend container runs `alembic upgrade head` on boot, then gunicorn with **one** uvicorn worker (the rate limiter and login throttle are in-memory — see `docker-compose.yml`). Full guide incl. the admin account and VPS deploy: **[DEPLOYMENT.md](./DEPLOYMENT.md)**.
+
+### The admin account
+
+Sellers register through the website; the admin exists **only** via the bootstrap script — there is deliberately no way to create or promote an admin through the API or UI:
+
+```bash
+# locally (dev DB):          in Docker:
+python -m scripts.create_admin admin@example.com
+docker compose exec backend python -m scripts.create_admin admin@example.com
+```
+
+Idempotent; prints a random password once; the account is created email-verified. With a password argument it creates *or resets* that account. Full reference: **[DEPLOYMENT.md](./DEPLOYMENT.md)**.
+
 ## Using Swagger UI to test endpoints
 
 1. Open `http://localhost:8000/docs`

@@ -5,7 +5,8 @@ React 19 + Vite, plain JavaScript, custom CSS design system ("koi vermilion on
 warm paper"). Talks to the FastAPI backend (default `http://localhost:8000`).
 
 Full guide: **[../docs/FRONTEND_GUIDE.md](../docs/FRONTEND_GUIDE.md)** — setup,
-routes, testing, project layout, troubleshooting.
+routes, testing, project layout, troubleshooting. Running the whole stack
+with Docker: **[../docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md)**.
 
 ## Quick start
 

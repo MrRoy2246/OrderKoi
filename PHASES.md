@@ -410,7 +410,7 @@ Small items, mostly account signups — but without them you're flying blind:
 Safe to launch without; schedule soon after:
 
 - [ ] Admin **MFA** (the admin account is the most powerful login)
-- [ ] Admin endpoint **pagination** (breaks only at hundreds of sellers)
+- [x] ~~Admin endpoint **pagination**~~ done ahead of launch (2026-09-12) — sellers + upgrade-requests paginated, all admin stats SQL-aggregated, hot-path indexes, `Numeric(12,2)` money, bounded email pool
 - [ ] Free-plan **TOCTOU race** fix (1-order edge case)
 - [ ] `month_orders` field rename (breaking API change — coordinate with frontend)
 - [ ] **Redis-backed** rate limiting + login throttle (needed when running >1 worker)

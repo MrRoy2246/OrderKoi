@@ -49,7 +49,11 @@ npm run dev
 
 Pro prices, the free-plan allowance, bKash details, and the support email are **not hard-coded**: `src/utils/proPricing.js` fetches `GET /public/stores/pricing` at runtime (module-level cache, fallbacks if the backend is down) and exposes `getProOptions()`, `proPriceFor(months)`, `getFreePlanOrders()`, `getBkash()`, `getSupportEmail()`. Pages call `fetchPublicConfig()` on mount, then bump a state counter to re-render once it lands. **Offers change in `backend/.env` + backend restart — no frontend rebuild.** If you add a new business value: extend `PublicConfigOut` (backend) → the fallback object in `proPricing.js` → a getter → consumers.
 
-## Production build
+## Production build (Docker)
+
+The deployed frontend is the `frontend/Dockerfile` build: `VITE_API_URL` is passed as a **build arg** (the API base is baked into the JS bundle — `src/api/client.js`), and the result is served by nginx with a CSP header, SPA fallback, and immutable asset caching. Everything is orchestrated by the repo-root `docker-compose.yml` — see **[DEPLOYMENT.md](./DEPLOYMENT.md)**.
+
+## Plain production build
 
 ```bash
 npm run build     # outputs optimized files to dist/
