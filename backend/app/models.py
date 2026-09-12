@@ -4,7 +4,7 @@ import enum
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -84,7 +84,7 @@ class Seller(Base):
     )
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )
 
     def __repr__(self) -> str:
@@ -202,7 +202,7 @@ class SubscriptionEvent(Base):
     note: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )
 
     def __repr__(self) -> str:
@@ -215,13 +215,19 @@ class Order(Base):
     __tablename__ = "orders"
     # Two requests can read the same "max order number" at the same
     # moment; the DB itself must refuse the resulting duplicate.
+    #
+    # The composite (seller_id, created_at) index serves every per-shop
+    # query — filtering AND the created_at ordering of the list — and
+    # covers plain seller_id lookups too, so no separate single-column
+    # index is kept for it.
     __table_args__ = (
         UniqueConstraint("seller_id", "order_number", name="uq_orders_seller_number"),
+        Index("ix_orders_seller_id_created_at", "seller_id", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     seller_id: Mapped[int] = mapped_column(
-        ForeignKey("sellers.id", ondelete="CASCADE"), index=True, nullable=False
+        ForeignKey("sellers.id", ondelete="CASCADE"), nullable=False
     )
     # Human-friendly per-seller sequence: seller's 1st, 2nd, 3rd order...
     order_number: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -250,7 +256,7 @@ class Order(Base):
     source: Mapped[str] = mapped_column(String(20), default="dashboard", nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
