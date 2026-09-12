@@ -33,6 +33,7 @@ from app.schemas import (
     AdminSellerOut,
     AdminStatsOut,
     AdminSubscriptionEventOut,
+    AdminUpgradeRequestListOut,
     AdminUpgradeRequestOut,
     ChartBucket,
     DailyCount,
@@ -725,29 +726,43 @@ def export_seller_orders_csv(
 
 @router.get(
     "/upgrade-requests",
-    response_model=list[AdminUpgradeRequestOut],
-    summary="List Pro upgrade requests (pending first, newest first)",
+    response_model=AdminUpgradeRequestListOut,
+    summary="List Pro upgrade requests (paginated, filterable by status)",
 )
 def list_upgrade_requests(
+    status_filter: str = Query(
+        default="all",
+        alias="status",
+        pattern="^(all|pending|approved|rejected)$",
+        description="all (pending first) | pending | approved | rejected",
+    ),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     admin: Seller = Depends(get_current_admin),  # noqa: ARG001 — guards access
-) -> list[dict]:
-    requests = (
-        db.query(UpgradeRequest)
+) -> dict:
+    """The admin's queue, one page at a time. The seller behind each
+    request is JOINed in — one query for the whole page, not one per
+    row (the old per-row lookup was an N+1 that crawled as the queue
+    grew)."""
+    query = (
+        db.query(UpgradeRequest, Seller)
+        .join(Seller, Seller.id == UpgradeRequest.seller_id)
         .order_by(
             # pending first, then newest on top
             (UpgradeRequest.status != "pending").asc(),
             UpgradeRequest.created_at.desc(),
+            UpgradeRequest.id.desc(),
         )
-        .all()
     )
+    if status_filter != "all":
+        query = query.filter(UpgradeRequest.status == status_filter)
 
-    result = []
-    for request in requests:
-        seller = db.get(Seller, request.seller_id)
-        if seller is None:
-            continue  # seller deleted; the request cascaded away but be safe
-        result.append(
+    total = query.count()
+    rows = query.offset(offset).limit(limit).all()
+
+    return {
+        "requests": [
             {
                 "id": request.id,
                 "months": request.months,
@@ -762,8 +777,12 @@ def list_upgrade_requests(
                 "plan": seller.plan,
                 "plan_expires_at": seller.plan_expires_at,
             }
-        )
-    return result
+            for request, seller in rows
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @router.patch(

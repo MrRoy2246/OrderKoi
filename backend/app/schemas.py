@@ -245,6 +245,18 @@ class UpgradeRequestAction(BaseModel):
     action: Literal["approve", "reject"]
 
 
+class AdminUpgradeRequestListOut(BaseModel):
+    """One page of the admin's upgrade-request queue.
+
+    Paginated and filterable by status — the queue stays fast no matter
+    how many requests accumulate over the platform's lifetime.
+    """
+    requests: list[AdminUpgradeRequestOut]
+    total: int
+    limit: int
+    offset: int
+
+
 class SubscriptionEventOut(BaseModel):
     """One subscription ledger entry."""
 

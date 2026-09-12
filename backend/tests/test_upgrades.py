@@ -76,7 +76,7 @@ def test_admin_approves_request_activates_pro(client, seller, auth_headers, admi
     ).json()
 
     # Admin sees it in the queue
-    queue = client.get("/admin/upgrade-requests", headers=admin_headers).json()
+    queue = client.get("/admin/upgrade-requests", headers=admin_headers).json()["requests"]
     entry = next(r for r in queue if r["id"] == request["id"])
     assert entry["store_name"] == seller["store_name"]
     assert entry["status"] == "pending"
@@ -128,6 +128,30 @@ def test_admin_rejects_request(client, auth_headers, admin_headers, captured_ema
     assert any("not approved" in e["subject"] for e in captured_email)
 
 
+def test_admin_upgrade_requests_filter_and_pagination(client, auth_headers, admin_headers):
+    """The queue is a paginated envelope filterable by status — one
+    JOINed query, no per-row seller lookups."""
+    request = client.post("/auth/upgrade-requests", json={"months": 1}, headers=auth_headers).json()
+
+    pending = client.get("/admin/upgrade-requests?status=pending", headers=admin_headers).json()
+    assert pending["total"] >= 1
+    assert all(r["status"] == "pending" for r in pending["requests"])
+    assert any(r["id"] == request["id"] for r in pending["requests"])
+
+    # Pagination envelope is honored
+    page = client.get("/admin/upgrade-requests?limit=1&offset=0", headers=admin_headers).json()
+    assert len(page["requests"]) == 1
+    assert page["limit"] == 1 and page["offset"] == 0
+    # Seller details ride along on every row (the JOIN, not a lookup)
+    assert page["requests"][0]["store_name"]
+
+    # Unknown status value is a 422
+    assert (
+        client.get("/admin/upgrade-requests?status=bogus", headers=admin_headers).status_code
+        == 422
+    )
+
+
 def test_approved_request_snapshots_its_granted_expiry(client, seller, auth_headers, admin_headers):
     """Each approved request remembers its own outcome — a later renewal
     changes the seller's current expiry but must never rewrite the
@@ -143,7 +167,7 @@ def test_approved_request_snapshots_its_granted_expiry(client, seller, auth_head
         f"/admin/upgrade-requests/{second['id']}", json={"action": "approve"}, headers=admin_headers
     )
 
-    queue = client.get("/admin/upgrade-requests", headers=admin_headers).json()
+    queue = client.get("/admin/upgrade-requests", headers=admin_headers).json()["requests"]
     first_row = next(r for r in queue if r["id"] == first["id"])
     second_row = next(r for r in queue if r["id"] == second["id"])
 

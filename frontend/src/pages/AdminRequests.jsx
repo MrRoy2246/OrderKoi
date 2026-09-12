@@ -50,15 +50,25 @@ function StoreAvatar({ storeName }) {
   );
 }
 
+/** Pending queue page size — the actionable list the admin works through. */
+const PENDING_PAGE = 20;
+/** How many recent requests feed the store-history grouping. */
+const HISTORY_PAGE = 100;
+
 /**
- * The admin's money desk. Pending requests come first — each card shows
- * exactly what to verify (duration, the amount the seller should have
- * paid, the transaction ID) so checking against the bKash
+ * The admin's money desk. The pending queue is paginated — each card
+ * shows exactly what to verify (duration, the amount the seller should
+ * have paid, the transaction ID) so checking against the bKash
  * statement is a glance, not a hunt. Below, one calm row per store:
- * click it and a modal tells the shop's complete story — its upgrade
- * requests (approved, rejected, pending) and its full plan timeline.
+ * click it and a modal tells the shop's recent story — its upgrade
+ * requests (approved, rejected, pending) and its plan timeline.
  */
 export default function AdminRequests() {
+  // The pending queue — the actionable list, one page at a time
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [pendingTotal, setPendingTotal] = useState(0);
+  const [pendingOffset, setPendingOffset] = useState(0);
+  // Recent requests + events power the store-history grouping
   const [requests, setRequests] = useState([]);
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -68,17 +78,28 @@ export default function AdminRequests() {
   const [pricingVersion, setPricingVersion] = useState(0);
 
   const fetchRequests = useCallback(() => {
+    setLoading(true);
     api.admin
-      .upgradeRequests()
-      .then(setRequests)
-      .catch((err) => setError(getErrorMessage(err, "Could not load upgrade requests."))
-      )
+      .upgradeRequests({ status: "pending", limit: PENDING_PAGE, offset: pendingOffset })
+      .then((data) => {
+        setPendingRequests(data.requests);
+        setPendingTotal(data.total);
+        // Approving/rejecting shrinks the queue — never sit past the last page
+        if (pendingOffset > 0 && pendingOffset >= data.total) {
+          setPendingOffset(Math.max(0, data.total - PENDING_PAGE));
+        }
+      })
+      .catch((err) => setError(getErrorMessage(err, "Could not load upgrade requests.")))
       .finally(() => setLoading(false));
+    api.admin
+      .upgradeRequests({ limit: HISTORY_PAGE })
+      .then((data) => setRequests(data.requests))
+      .catch(() => setRequests([])); // the history is supplementary
     api.admin
       .subscriptionEvents()
       .then(setEvents)
       .catch(() => setEvents([])); // the ledger is supplementary
-  }, []);
+  }, [pendingOffset]);
 
   // Live prices (env-driven on the backend) for the "should have paid"
   // verification figures — recompute when they arrive
@@ -103,12 +124,14 @@ export default function AdminRequests() {
     }
   }
 
-  const pending = requests.filter((r) => r.status === "pending");
+  // The whole queue fits the current page? Only then is the expected-
+  // payment total exact (a multi-page queue would only price its page)
+  const allPendingLoaded = pendingTotal <= pendingRequests.length;
   // Live prices load async — this memo recomputes the moment they land
   // (pricingVersion bumps) so the expected-payment figures are current
   const expectedTotal = useMemo(
-    () => pending.reduce((sum, r) => sum + (proPriceFor(r.months) ?? 0), 0),
-    [pending, pricingVersion]
+    () => pendingRequests.reduce((sum, r) => sum + (proPriceFor(r.months) ?? 0), 0),
+    [pendingRequests, pricingVersion]
   );
 
   // Store history grouped — one row per shop, holding BOTH its requests
@@ -170,8 +193,10 @@ export default function AdminRequests() {
       <header className="page-header">
         <h1>Upgrade Requests</h1>
         <p>
-          {pending.length > 0
-            ? `${pending.length} waiting · ${formatTk(expectedTotal)} expected — verify each payment against your bKash statement, then approve.`
+          {pendingTotal > 0
+            ? allPendingLoaded
+              ? `${pendingTotal} waiting · ${formatTk(expectedTotal)} expected — verify each payment against your bKash statement, then approve.`
+              : `${pendingTotal} waiting — verify each payment against your bKash statement, then approve.`
             : "Sellers who paid and want Pro. New requests appear here the moment a seller submits one."}
         </p>
       </header>
@@ -182,13 +207,13 @@ export default function AdminRequests() {
         </div>
       )}
 
-      {pending.length === 0 ? (
+      {pendingTotal === 0 ? (
         <EmptyState icon="check" title="No pending requests">
           <p>You're all caught up — nothing waiting for review.</p>
         </EmptyState>
       ) : (
         <div className="request-list">
-          {pending.map((request) => {
+          {pendingRequests.map((request) => {
             const expected = proPriceFor(request.months);
             return (
               <article key={request.id} className="request-card request-card--pending">
@@ -247,12 +272,40 @@ export default function AdminRequests() {
         </div>
       )}
 
+      {pendingTotal > PENDING_PAGE && (
+        <div className="pagination">
+          <span className="pagination-info">
+            Showing {pendingOffset + 1}–{Math.min(pendingOffset + PENDING_PAGE, pendingTotal)} of {pendingTotal}
+          </span>
+          <div className="pagination-buttons">
+            <button
+              type="button"
+              className="button button--outline button--small"
+              onClick={() => setPendingOffset(Math.max(0, pendingOffset - PENDING_PAGE))}
+              disabled={pendingOffset === 0 || loading}
+            >
+              <Icon name="chevronLeft" size={15} />
+              Previous
+            </button>
+            <button
+              type="button"
+              className="button button--outline button--small"
+              onClick={() => setPendingOffset(pendingOffset + PENDING_PAGE)}
+              disabled={pendingOffset + PENDING_PAGE >= pendingTotal || loading}
+            >
+              Next
+              <Icon name="chevronRight" size={15} />
+            </button>
+          </div>
+        </div>
+      )}
+
       <section className="card">
         <div className="card-header-row">
           <h3>Store history</h3>
           <span className="admin-mix-total">
             {storeGroups.length > 0
-              ? `${storeGroups.length} store${storeGroups.length === 1 ? "" : "s"} · click one for its requests and plan changes`
+              ? `${storeGroups.length} store${storeGroups.length === 1 ? "" : "s"} · most recent requests and plan changes · click one for details`
               : "requests and plan changes per store"}
           </span>
         </div>

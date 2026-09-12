@@ -251,7 +251,8 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify({ plan, ...(months ? { months } : {}), comp }),
       }),
-    upgradeRequests: () => request("/admin/upgrade-requests"),
+    upgradeRequests: (params = {}) =>
+      request(`/admin/upgrade-requests${toQueryString(params)}`),
     handleUpgradeRequest: (requestId, action) =>
       request(`/admin/upgrade-requests/${requestId}`, {
         method: "PATCH",
