@@ -1,0 +1,9 @@
+# Never bake into the image:
+venv/              # dev virtualenv (stale global tools live there too)
+.env               # secrets — config reaches the container via compose env
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/             # test suite runs on the host, not in the image
+backups/           # dev DB dumps
+requirements-dev.txt

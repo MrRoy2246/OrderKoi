@@ -1,0 +1,22 @@
+# Caddy edge proxy — automatic HTTPS for the app and the API.
+#
+# Domains come from the environment (set in .env, mapped by compose):
+#   SITE_DOMAIN  e.g. orderkoi.com       -> nginx frontend
+#   API_DOMAIN   e.g. api.orderkoi.com   -> FastAPI backend
+# Caddy obtains and renews Let's Encrypt certificates automatically.
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$SITE_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy frontend:80
+}
+
+{$API_DOMAIN} {
+	# Caddy sets X-Forwarded-For / X-Forwarded-Proto; the backend's
+	# uvicorn worker (FORWARDED_ALLOW_IPS=*) uses them so the rate
+	# limiter sees real visitor IPs instead of Caddy's.
+	reverse_proxy backend:8000
+}

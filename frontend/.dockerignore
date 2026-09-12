@@ -1,0 +1,6 @@
+# Never bake into the build context:
+node_modules/       # reinstalled inside the container (npm ci)
+dist/               # rebuilt inside the container
+e2e/                # Playwright tests run on the host
+test-results/
+playwright-report/

@@ -1,0 +1,48 @@
+# Rendered by envsubst at container start (API_ORIGIN comes from
+# compose = the same VITE_API_URL the bundle was built with).
+#
+# CSP is the XSS defense for this app: the auth token lives in
+# localStorage, so a single injected script could exfiltrate it.
+# - script-src 'self'            — no inline scripts (Vite emits none)
+# - style-src 'unsafe-inline'    — React inline style attributes
+# - connect-src ${API_ORIGIN}    — the browser may ONLY talk to the API
+#   ($http_* style nginx variables survive envsubst: the image entrypoint
+#   only substitutes variables that are actually set in the environment.)
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Security headers (always = also on 4xx/5xx responses)
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' ${API_ORIGIN}; frame-ancestors 'none'; base-uri 'self'; form-action 'self';" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    # Hashed filenames — content-addressed, safe to cache forever.
+    # `expires` sets Cache-Control: max-age=31536000 WITHOUT clobbering
+    # the server-level add_header lines (nginx: an add_header inside a
+    # location block hides ALL parent add_headers — a Cache-Control
+    # add_header here would strip the CSP from the JS bundle).
+    location /assets/ {
+        expires 1y;
+        try_files $uri =404;
+    }
+
+    # index.html must be revalidated on every visit, or users get a
+    # stale bundle after a deploy (the hashed assets it points to are
+    # gone).
+    location = /index.html {
+        expires -1;
+    }
+
+    # SPA — every unknown path is a client-side route
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

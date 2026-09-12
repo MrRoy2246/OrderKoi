@@ -1,0 +1,118 @@
+# OrderKoi — full stack: Postgres 17 + FastAPI backend + nginx frontend
+# (+ Caddy edge proxy, profile "edge", for auto-TLS on a public domain).
+#
+# All configuration comes from the .env file next to this file — see
+# .env.example. Nothing secret is baked into the images.
+#
+#   Local verify:  docker compose up --build -d
+#                  (db + backend + frontend; Caddy skipped)
+#   Production:    docker compose --profile edge up --build -d
+#                  (adds Caddy on :80/:443 with automatic HTTPS)
+
+name: orderkoi
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-orderkoi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-orderkoi}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # $$ so compose doesn't interpolate — the vars come from the
+      # container's own environment
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      # Inside the compose network the database is "db" on the default
+      # port — overrides any host values in .env
+      PG_HOST: db
+      PG_PORT: 5432
+      PG_DATABASE: ${POSTGRES_DB:-orderkoi}
+      PG_USER: ${POSTGRES_USER:-orderkoi}
+      PG_PASSWORD: ${POSTGRES_PASSWORD:?}
+      # Boot validation refuses the default / short keys in production
+      SECRET_KEY: ${SECRET_KEY:?set in .env}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      # JSON array (pydantic-settings parses it) — the origins the
+      # browser app is served from
+      CORS_ORIGINS: ${CORS_ORIGINS:?set in .env}
+      # Used in reset/verification links inside emails
+      FRONTEND_URL: ${FRONTEND_URL:?set in .env}
+      # Empty SMTP_HOST = console backend (emails to the log) — set
+      # these for real sending
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+    ports:
+      # Loopback only — on a VPS the public path is through Caddy
+      # (profile "edge"). Loopback publishing keeps `curl localhost:8000`
+      # working for local verification and SSH-tunnelled debugging.
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    # Migrate on boot, then hand the process over to gunicorn (exec —
+    # signals reach it, `docker stop` is fast, restart policy retries
+    # the whole sequence if the DB was briefly unreachable).
+    command: >
+      sh -c "alembic upgrade head
+      && exec gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w 1 -b 0.0.0.0:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the JS bundle at build time — the API's public URL
+        VITE_API_URL: ${VITE_API_URL:?set in .env}
+    restart: unless-stopped
+    environment:
+      # Substituted into the CSP header by nginx's template entrypoint
+      API_ORIGIN: ${VITE_API_URL:?}
+    ports:
+      # 8090, not 8080: 8080/8081 sit in this dev machine's Windows
+      # reserved port ranges — irrelevant on a server, where the public
+      # path is through Caddy anyway.
+      - "127.0.0.1:8090:80"
+    depends_on:
+      - backend
+
+  # Public edge: automatic HTTPS (Let's Encrypt) for both the site and
+  # the API subdomain. Only started with `--profile edge` — local
+  # verification doesn't need it (and has no domain for a certificate).
+  caddy:
+    profiles: ["edge"]
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?set in .env when using the edge profile}
+      API_DOMAIN: ${API_DOMAIN:?set in .env when using the edge profile}
+      ACME_EMAIL: ${ACME_EMAIL:?set in .env when using the edge profile}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates persist across rebuilds — losing /data means
+      # re-issuing (and hitting Let's Encrypt rate limits)
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
