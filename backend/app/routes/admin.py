@@ -219,31 +219,32 @@ def platform_stats(
     # custom ranges); short rolling presets keep the trailing
     # 12-month context — a 7-day window bucketed by month is one
     # lonely bar, and money views want the longer story.
-    sellers = db.query(Seller).all()
-    seller_ids = [seller.id for seller in sellers]
+    # Shop counts straight from SQL — never load the sellers table into
+    # Python (500k sellers must cost the same as 50). Active Pro is the
+    # same rule as pro_plan_active(), evaluated in the database.
+    now = utcnow()
+    active_pro = (Seller.plan == "pro") & (
+        Seller.plan_expires_at.is_(None) | (Seller.plan_expires_at >= now)
+    )
+    shops = Seller.role == "seller"
+
+    total_sellers = db.query(func.count(Seller.id)).filter(shops).scalar()
+    pro_sellers = db.query(func.count(Seller.id)).filter(shops, active_pro).scalar()
+    free_sellers = total_sellers - pro_sellers
     explicit_range = start is not None or end is not None
 
-    total_orders = 0
-    platform_revenue = 0.0
-    sellers_with_orders = 0
+    # All-time platform totals in ONE aggregate query — count, revenue,
+    # and distinct shops, in a single pass over non-cancelled orders
+    # (no group-by, no ORM rows materialized).
+    totals = db.query(
+        func.count(Order.id),
+        func.coalesce(func.sum(Order.total_price), 0.0),
+        func.count(func.distinct(Order.seller_id)),
+    ).filter(Order.status != OrderStatus.CANCELLED.value).one()
+    total_orders = int(totals[0])
+    platform_revenue = round(float(totals[1]), 2)
+    sellers_with_orders = int(totals[2])
 
-    if seller_ids:
-        rows = (
-            db.query(
-                Order.seller_id,
-                func.count(Order.id),
-                func.coalesce(func.sum(Order.total_price), 0.0),
-            )
-            .filter(Order.status != OrderStatus.CANCELLED.value)
-            .group_by(Order.seller_id)
-            .all()
-        )
-        total_orders = sum(count for _sid, count, _rev in rows)
-        platform_revenue = round(sum(float(rev) for _sid, _count, rev in rows), 2)
-        sellers_with_orders = len(rows)
-
-    # "Seller" accounts only — admins aren't counted as shops
-    shops = [seller for seller in sellers if seller.role == "seller"]
     pending_upgrades = (
         db.query(func.count(UpgradeRequest.id))
         .filter(UpgradeRequest.status == "pending")
@@ -336,25 +337,11 @@ def platform_stats(
     now_month_index = now_local.year * 12 + (now_local.month - 1)
     use_daily = window_days <= 90
     if use_daily:
-        # Day buckets: reuse the daily GMV rows, but keep every day of
-        # the window (quiet days stay zero so the chart keeps its shape)
-        gmv_daily_rows = (
-            db.query(
-                day_expr,
-                func.count(Order.id),
-                func.coalesce(func.sum(Order.total_price), 0.0),
-            )
-            .filter(
-                Order.created_at >= window_start_dt,
-                Order.created_at < window_end_dt,
-                Order.status != OrderStatus.CANCELLED.value,
-            )
-            .group_by(day_expr)
-            .all()
-        )
+        # Day buckets: the daily orders query already carries each day's
+        # GMV — reuse its rows instead of running the same query twice
         gmv_map = {
             str(day): (int(count), round(float(total), 2))
-            for day, count, total in gmv_daily_rows
+            for day, count, total in daily_rows
         }
         signup_day_expr = business_day(Seller.created_at)
         signup_day_rows = (
@@ -485,9 +472,9 @@ def platform_stats(
         ]
 
     return {
-        "total_sellers": len(shops),
-        "pro_sellers": sum(1 for seller in shops if pro_plan_active(seller)),
-        "free_sellers": sum(1 for seller in shops if not pro_plan_active(seller)),
+        "total_sellers": total_sellers,
+        "pro_sellers": pro_sellers,
+        "free_sellers": free_sellers,
         "sellers_with_orders": sellers_with_orders,
         "total_orders": total_orders,
         "platform_revenue": platform_revenue,
