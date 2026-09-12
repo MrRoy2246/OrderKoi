@@ -33,6 +33,14 @@ First start creates a **brand-new, empty Postgres database** inside a Docker vol
 | Backend API | http://localhost:8000 |
 | API docs (Swagger) | http://localhost:8000/docs |
 
+**Verify the whole stack in a real browser** (landing, signup, admin login, every admin page — fails loudly on any console error or blocked request):
+
+```bash
+cd frontend && node scripts/docker-verify.mjs
+```
+
+(It expects the admin `abin@test.com / secretpass123` in the Docker volume — or edit the credentials at the top of the script.)
+
 > Port 8090 (not 8080) because this dev machine has 8080/8081 in Windows' reserved port ranges — on a server it doesn't matter, Caddy owns the public ports.
 
 Configuration comes from the **`.env` file in the repo root** (never committed; template: `.env.example`). If `.env` doesn't exist, copy `.env.example` and fill it in first — compose refuses to start without `POSTGRES_PASSWORD`, `SECRET_KEY`, `CORS_ORIGINS`, `FRONTEND_URL` and `VITE_API_URL`.
