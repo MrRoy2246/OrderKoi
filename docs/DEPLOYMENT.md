@@ -130,7 +130,8 @@ Save the printed password. Done — `https://orderkoi.example.com` is live.
 ### 5.5 After-deploy checklist
 
 - [ ] Make `og:image` URL absolute in `frontend/index.html` (relative today) and rebuild
-- [ ] Confirm backups are running: `docker compose ps` shows `backup` Up, and `backend/backups/` has a fresh `.dump` (section 7)
+- [ ] Confirm backups are running: `docker compose ps` shows `backup` Up, and `backend/backups/` has a fresh `.dump.enc` (section 7)
+- [ ] Store `BACKUP_PASSPHRASE` somewhere that is **not** this VPS — without it the backups cannot be read (section 7)
 - [ ] Point the offsite copy at `backend/backups/` — a backup that only lives on this VPS is not a backup (section 7)
 - [ ] Test one restore into a scratch database (section 8) — before you need it, not during an outage
 - [ ] Uptime monitoring on `/health` and `/ready` (UptimeRobot/BetterStack free tier)
@@ -178,21 +179,51 @@ docker compose logs --tail=20 backup          # what it has been doing
 ```
 
 Every `BACKUP_INTERVAL_HOURS` (default 24) it dumps the database to
-`./backend/backups/orderkoi-<UTC timestamp>.dump`, keeps the newest `BACKUP_KEEP`
-(default 14), and prunes the rest. Both are `.env` values — no code change:
+`./backend/backups/orderkoi-<UTC timestamp>.dump.enc`, keeps the newest
+`BACKUP_KEEP` (default 14), and prunes the rest. Both are `.env` values — no
+code change:
 
 ```bash
 BACKUP_INTERVAL_HOURS=6
 BACKUP_KEEP=30
 ```
 
-Three details make the difference between "a file exists" and "a backup":
+Four details make the difference between "a file exists" and "a backup":
 
 | | Why |
 |---|---|
+| It is **encrypted** (AES-256) before it is written | A dump holds bcrypt password hashes and every customer's name, phone and address. The offsite copy is the point of backing up, and that file arriving on a NAS, in an object bucket or on a laptop is one mis-set permission away from a breach |
 | It writes `*.partial` and renames only after success | A dump cut short by a crash or a full disk can never be mistaken for a good one |
 | It verifies each dump with `pg_restore --list` before keeping it | An unreadable archive is deleted and the failure is logged, rather than discovered years later |
-| It is `postgres:17-alpine`, the database's own image | `pg_dump` refuses to dump a server **newer** than itself, so the client can never fall behind |
+| It is built on `postgres:17-alpine`, the database's own image | `pg_dump` refuses to dump a server **newer** than itself, so the client can never fall behind |
+
+### The backup passphrase
+
+Encryption is on by default and needs `BACKUP_PASSPHRASE` — a **required**
+`.env` value. The backup service refuses to start without it and says so:
+
+```bash
+# generate one
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+```bash
+BACKUP_PASSPHRASE=<long random string>
+```
+
+> **There is no recovery path.** The passphrase is not stored in the dump, and
+> nothing on the server can derive it. Keep a copy in your password manager
+> **and** in whatever you use to bootstrap a new VPS — not on the VPS itself.
+> Without it the backups are noise, and this is the one operational mistake in
+> this guide that destroys data instead of exposing it.
+
+`BACKUP_ENCRYPTION=off` writes plain `.dump` files instead. Only do that if
+something further down the path (an encrypted bucket, `rclone crypt`) encrypts
+them, and note the log shouts `WARNING: … UNENCRYPTED` on every cycle so the
+choice stays visible.
+
+The plaintext intermediate is deleted in the same cycle it is created — it
+never lands in `./backend/backups`.
 
 A backup that only exists on the machine it protects is not a backup. Add a
 host-side copy to a different provider — a cron line is enough:
@@ -202,7 +233,8 @@ host-side copy to a different provider — a cron line is enough:
 30 3 * * * root rsync -a --delete /opt/orderkoi/backend/backups/ user@other-host:/backups/orderkoi/
 ```
 
-(or `rclone copy` to S3/B2/Drive — anything that isn't this VPS.)
+(or `rclone copy` to S3/B2/Drive — anything that isn't this VPS.) The files are
+already encrypted, so this step is a copy and nothing more.
 
 **Test a restore before you need one.** An untested backup is a guess. Do it
 against a throwaway database, never the live one — section 8 covers the
@@ -222,6 +254,28 @@ Stop the API first so nothing writes mid-restore, then put it back afterwards:
 ```bash
 docker compose stop backend
 ```
+
+**Step 1 — decrypt it.** Dumps are encrypted (section 7), so the first command
+of any restore turns the artifact back into something `pg_restore` can read:
+
+```bash
+docker compose exec backup sh -c \
+  'openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:BACKUP_PASSPHRASE \
+   < /backups/orderkoi-20260916-064156.dump.enc \
+   > /backups/orderkoi-20260916-064156.dump'
+```
+
+The passphrase comes from the container's own environment — the same
+`BACKUP_PASSPHRASE` the backup was written with, so no secret is typed on the
+command line where it would land in your shell history.
+
+`-iter 200000` must match `BACKUP_PBKDF2_ITER` (the default). It is **not**
+recorded in the file: a restore with the wrong iteration count fails with
+`bad decrypt`, and the fix is to use the value the dumps were written with.
+
+A wrong passphrase fails here too (`bad decrypt`), which is the honest
+outcome — you get an error, not a truncated database. Delete the decrypted
+`.dump` when the restore is done; it is the one file that shouldn't linger.
 
 **Option A — restore over the existing database** (drops and recreates the
 objects the dump contains; anything the dump doesn't know about is left alone):
@@ -282,5 +336,7 @@ revision, the restore worked. If `alembic_version` is *ahead* of your code,
 | 429 Too Many Requests everywhere | You're going through a proxy without forwarded headers being trusted — this stack is configured correctly (uvicorn `FORWARDED_ALLOW_IPS=*`, backend port never public) |
 | Backend won't boot in production | Almost always `SECRET_KEY` — must be set, not the default, ≥32 chars |
 | Let's Encrypt fails on the VPS | DNS A-records not resolving yet, or ports 80/443 blocked by the VPS firewall |
-| `backend/backups/` stays empty | `docker compose logs backup` — usually `POSTGRES_PASSWORD` doesn't match the database's. The log says `BACKUP FAILED … no new backup written`, and no file is left behind on purpose |
+| `backend/backups/` stays empty | `docker compose logs backup` — usually `POSTGRES_PASSWORD` doesn't match the database's, or (with encryption on) `BACKUP_PASSPHRASE` is unset. The log says `BACKUP FAILED … no new backup written`, and no file is left behind on purpose |
+| Backup log says `UNENCRYPTED` every cycle | `BACKUP_ENCRYPTION=off` is set in `.env`. Fine only if something further down the path encrypts the copy — otherwise set it back to `on` and set a passphrase |
+| Restore fails with `bad decrypt` | Wrong passphrase, or `-iter` doesn't match the `BACKUP_PBKDF2_ITER` the dumps were written with (it is not stored in the file) — section 8 |
 | Restore prints `relation already exists` warning spam | The dump was piped through `psql` instead of `pg_restore` (section 8). Note `psql` still exits **0** in that case — the restore half-failed and reported success |

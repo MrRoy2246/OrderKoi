@@ -1,0 +1,20 @@
+# Line endings, pinned where they matter.
+#
+# This repo is developed on Windows with core.autocrlf=true, but the
+# files below are read by Linux, not by Windows:
+#
+#   * deploy/backup.sh is bind-mounted straight into the backup
+#     container and run by dash. A CRLF `set -eu` is a hard error there,
+#     so a git checkout that rewrote the line endings would crash-loop
+#     the container on the documented `docker compose up` path.
+#   * Dockerfiles with `\` continuations: the CRLF rides along on the
+#     continued line and the instruction is mangled — builds break in a
+#     way that reads as a typo.
+#   * The Caddyfile is parsed by a Linux process for the same reason.
+#
+# `eol=lf` on both sides means the working copy is always LF as well, so
+# what runs locally is what runs on the server.
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.Dockerfile text eol=lf
+Caddyfile text eol=lf

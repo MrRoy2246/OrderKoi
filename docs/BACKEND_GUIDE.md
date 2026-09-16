@@ -108,6 +108,7 @@ python -m scripts.backup_db        # from backend/ — also run by Task Schedule
 - `pg_dump` custom format → `backend/backups/orderkoi-YYYYMMDD-HHMMSS.dump` (restore with `pg_restore`). Credentials come from `.env`; `pg_dump` is located via `PG_BINDIR`, PATH, or the standard install dir.
 - Keeps the newest 14 backups, deletes older ones automatically
 - The Windows scheduled task is **"OrderKoi DB backup"** — view it in Task Scheduler or `schtasks /query /tn "OrderKoi DB backup"`
+- This script's dumps are **plaintext**, and it only ever touches `*.dump`. The Docker `backup` service writes **encrypted** `*.dump.enc` files into the same directory and the two never prune each other — see section 7 of `docs/DEPLOYMENT.md` for the container and the passphrase it needs.
 
 ## Email
 

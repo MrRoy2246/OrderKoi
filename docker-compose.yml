@@ -39,17 +39,20 @@ services:
 
   # Automated PostgreSQL backups — the script is deploy/backup.sh.
   #
-  # Uses the database's OWN image so pg_dump matches the server version
-  # (a pg_dump older than the server refuses to dump it at all). The
-  # backend image deliberately carries no pg_dump.
+  # Built from the database's OWN image so pg_dump matches the server
+  # version (a pg_dump older than the server refuses to dump it at all),
+  # plus openssl for the encryption below. The backend image
+  # deliberately carries no pg_dump.
   #
   # Dumps land in ./backend/backups on the host (gitignored, the same
   # directory scripts/backup_db.py uses) so they are trivial to copy
   # somewhere offsite — which is the part that actually saves you. A
   # backup that only exists on the machine it protects is not a backup;
-  # see docs/DEPLOYMENT.md.
+  # see docs/DEPLOYMENT.md. They are encrypted before they land there.
   backup:
-    image: postgres:17-alpine
+    build:
+      context: ./deploy
+      dockerfile: backup.Dockerfile
     restart: unless-stopped
     depends_on:
       db:
@@ -63,6 +66,15 @@ services:
       # How often to dump, and how many dumps to keep on disk
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
       BACKUP_KEEP: ${BACKUP_KEEP:-14}
+      # Encrypt dumps at the point they are written (on by default).
+      # BACKUP_PASSPHRASE is left optional here rather than required, so
+      # that `docker compose up` for the API alone doesn't demand a
+      # secret it has no use for — the backup script refuses to start
+      # without it and says exactly what to set. The passphrase is NOT
+      # in the dump or beside it: lose it and the backups are gone.
+      BACKUP_ENCRYPTION: ${BACKUP_ENCRYPTION:-on}
+      BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:-}
+      BACKUP_PBKDF2_ITER: ${BACKUP_PBKDF2_ITER:-200000}
     volumes:
       - ./deploy/backup.sh:/usr/local/bin/backup.sh:ro
       - ./backend/backups:/backups
