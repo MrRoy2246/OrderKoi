@@ -15,15 +15,25 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # Don't advertise the exact nginx version in Server / error pages
+    server_tokens off;
+
+    # Reject oversized uploads (nothing here posts a body, but be explicit)
+    client_max_body_size 1m;
+
     # Security headers (always = also on 4xx/5xx responses). data: in
     # font-src: @fontsource inlines the variable font as a base64 URI
     # inside the CSS — without it the font silently falls back.
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ${API_ORIGIN}; frame-ancestors 'none'; base-uri 'self'; form-action 'self';" always;
+    # HSTS is set at Caddy, where TLS terminates (see Caddyfile).
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ${API_ORIGIN}; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Cross-Origin-Opener-Policy "same-origin" always;
 
     gzip on;
+    gzip_vary on;
     gzip_types text/css application/javascript application/json image/svg+xml;
 
     # Hashed filenames — content-addressed, safe to cache forever.

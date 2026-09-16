@@ -7,7 +7,7 @@ import Icon from "../components/icons";
 import { SkeletonCard } from "../components/States";
 import StatusBreakdown from "../components/StatusBreakdown";
 import FreeLimitBanner, { FreeOrderMeter } from "../components/FreeLimitBanner";
-import { ordersLink } from "../utils/businessDate";
+import { businessToday, ordersLink, shiftDays } from "../utils/businessDate";
 import { formatTk, parseServerDate } from "../utils/orderStatus";
 import { fetchPublicConfig, getFreePlanOrders } from "../utils/proPricing";
 
@@ -28,10 +28,6 @@ function formatDate(value) {
     month: "short",
     year: "numeric",
   });
-}
-
-function toDateInput(date) {
-  return date.toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
 /**
@@ -208,7 +204,7 @@ function StatCard({ icon, label, value, accent, to, title, spark }) {
 
 /** Custom date-range picker — appears when the "Custom" tab is active. */
 function CustomRangePanel({ start, end, onStart, onEnd, onApply, error }) {
-  const today = toDateInput(new Date());
+  const today = businessToday();
   return (
     <div className="custom-range-panel">
       <div className="custom-range-field">
@@ -246,8 +242,8 @@ function CustomRangePanel({ start, end, onStart, onEnd, onApply, error }) {
 export default function Dashboard() {
   const { seller } = useAuth();
   const [range, setRange] = useState("today");
-  const [customStart, setCustomStart] = useState(toDateInput(new Date(Date.now() - 29 * DAY_MS)));
-  const [customEnd, setCustomEnd] = useState(toDateInput(new Date()));
+  const [customStart, setCustomStart] = useState(shiftDays(businessToday(), -29));
+  const [customEnd, setCustomEnd] = useState(businessToday());
   const [appliedRange, setAppliedRange] = useState(null); // {start, end} once applied
   const [rangeError, setRangeError] = useState(null);
 

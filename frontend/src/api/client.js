@@ -3,7 +3,19 @@
  * Handles the auth token, JSON encoding, and error normalization.
  */
 
-export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+/**
+ * The API origin, compiled into the bundle at build time.
+ *
+ * Trailing slashes are stripped so `https://api.example.com/` and
+ * `https://api.example.com` produce identical request URLs — a doubled
+ * slash 404s on some proxies and breaks CORS origin matching.
+ *
+ * A production build refuses to run without VITE_API_URL (see
+ * vite.config.js), so the localhost fallback only ever applies to
+ * `npm run dev`.
+ */
+const configuredApiUrl = import.meta.env.VITE_API_URL;
+export const API_URL = (configuredApiUrl || "http://localhost:8000").replace(/\/+$/, "");
 
 const TOKEN_KEY = "orderkoi_token";
 

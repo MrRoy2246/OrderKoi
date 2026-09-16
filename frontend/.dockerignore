@@ -1,6 +1,16 @@
-# Never bake into the build context:
-node_modules/       # reinstalled inside the container (npm ci)
-dist/               # rebuilt inside the container
-e2e/                # Playwright tests run on the host
+# Never bake into the build context.
+#
+# NOTE: Docker only treats a line as a comment when '#' is the FIRST
+# character — a trailing "# ..." makes the whole line a literal
+# pattern that matches nothing. Keep comments on their own lines.
+
+# reinstalled inside the container (npm ci)
+node_modules/
+# rebuilt inside the container
+dist/
+# Playwright tests run on the host
+e2e/
 test-results/
 playwright-report/
+.env
+.env.local
