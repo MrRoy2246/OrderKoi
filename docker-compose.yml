@@ -28,6 +28,56 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
+      # A first boot on an empty volume has to run initdb — give it room
+      # so the retry budget isn't exhausted before Postgres is ready.
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Automated PostgreSQL backups — the script is deploy/backup.sh.
+  #
+  # Uses the database's OWN image so pg_dump matches the server version
+  # (a pg_dump older than the server refuses to dump it at all). The
+  # backend image deliberately carries no pg_dump.
+  #
+  # Dumps land in ./backend/backups on the host (gitignored, the same
+  # directory scripts/backup_db.py uses) so they are trivial to copy
+  # somewhere offsite — which is the part that actually saves you. A
+  # backup that only exists on the machine it protects is not a backup;
+  # see docs/DEPLOYMENT.md.
+  backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB:-orderkoi}
+      PGUSER: ${POSTGRES_USER:-orderkoi}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?}
+      # How often to dump, and how many dumps to keep on disk
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+    volumes:
+      - ./deploy/backup.sh:/usr/local/bin/backup.sh:ro
+      - ./backend/backups:/backups
+    # Overrides the postgres image entrypoint: this container needs the
+    # client binaries, never an actual database server.
+    entrypoint: ["/bin/sh", "/usr/local/bin/backup.sh"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   backend:
     build: ./backend
@@ -43,11 +93,20 @@ services:
       # Boot validation refuses the default / short keys in production
       SECRET_KEY: ${SECRET_KEY:?set in .env}
       ENVIRONMENT: ${ENVIRONMENT:-development}
+      # Which peers' X-Forwarded-For the app trusts. "*" is safe ONLY
+      # because Caddy (not the client) sets the header and the backend
+      # port is never published publicly. Pin this to the compose
+      # network CIDR before putting a CDN in front or exposing :8000.
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-*}
       # JSON array (pydantic-settings parses it) — the origins the
       # browser app is served from
       CORS_ORIGINS: ${CORS_ORIGINS:?set in .env}
       # Used in reset/verification links inside emails
       FRONTEND_URL: ${FRONTEND_URL:?set in .env}
+      # auto | console | smtp. 'console' keeps a deployment offline no
+      # matter what the SMTP values say — but production REFUSES to
+      # boot on it (login needs a verified email).
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-auto}
       # Empty SMTP_HOST = console backend (emails to the log) — set
       # these for real sending
       SMTP_HOST: ${SMTP_HOST:-}
@@ -55,6 +114,72 @@ services:
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       EMAIL_FROM: ${EMAIL_FROM:-}
+
+      # --- Business configuration ---
+      # Served live at GET /public/stores/pricing, so changing any of
+      # these is an .env edit + `docker compose up -d` — no rebuild.
+      # BKASH_NUMBER and SUPPORT_EMAIL are required: without them a
+      # deployment would silently advertise the developer's personal
+      # number and inbox to customers.
+      FREE_PLAN_ORDERS: ${FREE_PLAN_ORDERS:-15}
+      PRO_PRICE_1M: ${PRO_PRICE_1M:-350}
+      PRO_PRICE_6M: ${PRO_PRICE_6M:-1750}
+      PRO_PRICE_12M: ${PRO_PRICE_12M:-2900}
+      BKASH_NUMBER: ${BKASH_NUMBER:?set in .env}
+      BKASH_TYPE: ${BKASH_TYPE:-Personal}
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:?set in .env}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Dhaka}
+
+      # --- Operational tunables (defaults live in app/config.py) ---
+      # EVERY setting the app reads must be listed here, because the
+      # image ships no .env file (it's excluded from the build context)
+      # — so a variable that isn't passed through simply cannot be
+      # changed at deploy time. Adding one here is what makes it
+      # tunable from .env without touching compose again.
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
+      RESET_TOKEN_EXPIRE_MINUTES: ${RESET_TOKEN_EXPIRE_MINUTES:-30}
+      EMAIL_VERIFICATION_EXPIRE_MINUTES: ${EMAIL_VERIFICATION_EXPIRE_MINUTES:-1440}
+      # Login/signup throttles — raise these where many users share one
+      # IP (mobile-carrier CGNAT).
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_LOGIN_MAX: ${RATE_LIMIT_LOGIN_MAX:-10}
+      RATE_LIMIT_LOGIN_WINDOW: ${RATE_LIMIT_LOGIN_WINDOW:-60}
+      RATE_LIMIT_SIGNUP_MAX: ${RATE_LIMIT_SIGNUP_MAX:-5}
+      RATE_LIMIT_SIGNUP_WINDOW: ${RATE_LIMIT_SIGNUP_WINDOW:-60}
+      RATE_LIMIT_FORGOT_PASSWORD_MAX: ${RATE_LIMIT_FORGOT_PASSWORD_MAX:-5}
+      RATE_LIMIT_FORGOT_PASSWORD_WINDOW: ${RATE_LIMIT_FORGOT_PASSWORD_WINDOW:-60}
+      RATE_LIMIT_RESEND_VERIFICATION_MAX: ${RATE_LIMIT_RESEND_VERIFICATION_MAX:-5}
+      RATE_LIMIT_RESEND_VERIFICATION_WINDOW: ${RATE_LIMIT_RESEND_VERIFICATION_WINDOW:-60}
+      RATE_LIMIT_TRACK_MAX: ${RATE_LIMIT_TRACK_MAX:-60}
+      RATE_LIMIT_TRACK_WINDOW: ${RATE_LIMIT_TRACK_WINDOW:-60}
+      RATE_LIMIT_PUBLIC_FORM_MAX: ${RATE_LIMIT_PUBLIC_FORM_MAX:-10}
+      RATE_LIMIT_PUBLIC_FORM_WINDOW: ${RATE_LIMIT_PUBLIC_FORM_WINDOW:-60}
+      RATE_LIMIT_PUBLIC_MAX: ${RATE_LIMIT_PUBLIC_MAX:-30}
+      RATE_LIMIT_PUBLIC_WINDOW: ${RATE_LIMIT_PUBLIC_WINDOW:-60}
+      LOGIN_MAX_FAILURES: ${LOGIN_MAX_FAILURES:-5}
+      LOGIN_FAILURE_WINDOW_MINUTES: ${LOGIN_FAILURE_WINDOW_MINUTES:-15}
+      LOGIN_LOCKOUT_MINUTES: ${LOGIN_LOCKOUT_MINUTES:-15}
+      # Database pool — size to cover the sync route threadpool (40).
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
+      DB_POOL_RECYCLE_SECONDS: ${DB_POOL_RECYCLE_SECONDS:-1800}
+      DB_POOL_TIMEOUT_SECONDS: ${DB_POOL_TIMEOUT_SECONDS:-30}
+      EMAIL_WORKERS: ${EMAIL_WORKERS:-4}
+      EMAIL_SEND_ATTEMPTS: ${EMAIL_SEND_ATTEMPTS:-3}
+      # JSON array of backoff seconds between attempts
+      EMAIL_RETRY_DELAYS_SECONDS: ${EMAIL_RETRY_DELAYS_SECONDS:-[2,10]}
+      SMTP_TIMEOUT_SECONDS: ${SMTP_TIMEOUT_SECONDS:-10}
+      # Never log reset/verification links in production.
+      EMAIL_CONSOLE_LOGS_BODY: ${EMAIL_CONSOLE_LOGS_BODY:-false}
+      EXPORT_MAX_ROWS: ${EXPORT_MAX_ROWS:-10000}
+      ADMIN_EXPORT_MAX_ROWS: ${ADMIN_EXPORT_MAX_ROWS:-20000}
+      MAX_PAGE_SIZE: ${MAX_PAGE_SIZE:-100}
+      MAX_ADMIN_PAGE_SIZE: ${MAX_ADMIN_PAGE_SIZE:-200}
+      MAX_ITEM_PRICE: ${MAX_ITEM_PRICE:-10000000}
+      MAX_ORDER_TOTAL: ${MAX_ORDER_TOTAL:-9999999999.99}
+      # /docs + /openapi.json — auto (on in dev, off in production)
+      ENABLE_API_DOCS: ${ENABLE_API_DOCS:-}
     ports:
       # Loopback only — on a VPS the public path is through Caddy
       # (profile "edge"). Loopback publishing keeps `curl localhost:8000`
@@ -69,6 +194,29 @@ services:
     command: >
       sh -c "alembic upgrade head
       && exec gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w 1 -b 0.0.0.0:8000"
+    # Probes /ready (a real SELECT 1), not /health — an API that is up
+    # but has lost Postgres must report unhealthy so Caddy stops
+    # routing to it. See scripts/healthcheck.py.
+    healthcheck:
+      test: ["CMD", "python", "-m", "scripts.healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # Covers the alembic upgrade that runs on boot
+      start_period: 60s
+    # Docker's default 10s SIGTERM->SIGKILL is shorter than gunicorn's
+    # graceful timeout, which would cut in-flight requests on deploy.
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: "0.75"
 
   frontend:
     build:
@@ -86,7 +234,23 @@ services:
       # path is through Caddy anyway.
       - "127.0.0.1:8090:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   # Public edge: automatic HTTPS (Let's Encrypt) for both the site and
   # the API subdomain. Only started with `--profile edge` — local
@@ -102,6 +266,8 @@ services:
       SITE_DOMAIN: ${SITE_DOMAIN:?set in .env when using the edge profile}
       API_DOMAIN: ${API_DOMAIN:?set in .env when using the edge profile}
       ACME_EMAIL: ${ACME_EMAIL:?set in .env when using the edge profile}
+      # HSTS max-age in seconds (Caddyfile default: 31536000 = 1 year)
+      HSTS_MAX_AGE: ${HSTS_MAX_AGE:-31536000}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Certificates persist across rebuilds — losing /data means
@@ -109,8 +275,24 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_healthy
+      # service_started (not healthy) on purpose: the API is the
+      # dependency that must be *ready*; gating the edge on the static
+      # file server's probe would add a needless way for TLS to fail.
+      frontend:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:2019/config/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   pgdata:

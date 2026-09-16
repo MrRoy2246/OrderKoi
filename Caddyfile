@@ -7,9 +7,37 @@
 
 {
 	email {$ACME_EMAIL}
+	# Structured access logs to stdout — captured by `docker logs` and
+	# any log shipper. Without this Caddy emits no access log at all,
+	# leaving no way to reconstruct what a user's request did.
+	log {
+		output stdout
+		format json
+	}
+}
+
+# Shared hardening, applied to both sites.
+#
+# HSTS lives HERE (not in nginx) because Caddy is where TLS terminates:
+# it is the only layer that can protect the very first plaintext
+# request. Override the max-age with HSTS_MAX_AGE in .env.
+#
+# NOTE: includeSubDomains means EVERY subdomain of the apex must be
+# served over HTTPS. Drop it if you later add an HTTP-only subdomain.
+(SECURITY_HEADERS) {
+	header {
+		Strict-Transport-Security "max-age={$HSTS_MAX_AGE:31536000}; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		# Don't advertise the server software
+		-Server
+	}
 }
 
 {$SITE_DOMAIN} {
+	import SECURITY_HEADERS
 	encode zstd gzip
 	reverse_proxy frontend:80
 }
@@ -18,5 +46,17 @@
 	# Caddy sets X-Forwarded-For / X-Forwarded-Proto; the backend's
 	# uvicorn worker (FORWARDED_ALLOW_IPS=*) uses them so the rate
 	# limiter sees real visitor IPs instead of Caddy's.
+	#
+	# NOT adding `trusted_proxies` here is deliberate: doing so makes
+	# Caddy APPEND to a client-supplied X-Forwarded-For, and uvicorn
+	# reads the LEFTMOST value — which would let anyone bypass every
+	# per-IP rate limit by rotating a header. Pin FORWARDED_ALLOW_IPS
+	# to the compose network before changing this.
+	import SECURITY_HEADERS
+	# Reject oversized request bodies at the edge. The app's own rate
+	# limiter runs inside FastAPI, i.e. only AFTER a body is accepted.
+	request_body {
+		max_size 1MB
+	}
 	reverse_proxy backend:8000
 }

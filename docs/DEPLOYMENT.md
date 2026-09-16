@@ -43,7 +43,7 @@ cd frontend && node scripts/docker-verify.mjs
 
 > Port 8090 (not 8080) because this dev machine has 8080/8081 in Windows' reserved port ranges — on a server it doesn't matter, Caddy owns the public ports.
 
-Configuration comes from the **`.env` file in the repo root** (never committed; template: `.env.example`). If `.env` doesn't exist, copy `.env.example` and fill it in first — compose refuses to start without `POSTGRES_PASSWORD`, `SECRET_KEY`, `CORS_ORIGINS`, `FRONTEND_URL` and `VITE_API_URL`.
+Configuration comes from the **`.env` file in the repo root** (never committed; template: `.env.example`). If `.env` doesn't exist, copy `.env.example` and fill it in first — compose refuses to start without `POSTGRES_PASSWORD`, `SECRET_KEY`, `CORS_ORIGINS`, `FRONTEND_URL`, `VITE_API_URL`, `BKASH_NUMBER` and `SUPPORT_EMAIL`. (`SITE_DOMAIN`/`API_DOMAIN`/`ACME_EMAIL` must be *set* even if you never use the edge profile — compose substitutes the whole file before it filters by profile, so leaving them blank aborts startup over a service you aren't running.)
 
 ## 3. Create the admin on a new database
 
@@ -130,7 +130,9 @@ Save the printed password. Done — `https://orderkoi.example.com` is live.
 ### 5.5 After-deploy checklist
 
 - [ ] Make `og:image` URL absolute in `frontend/index.html` (relative today) and rebuild
-- [ ] Nightly backups: cron on the host → `docker compose exec -T db pg_dump -U orderkoi orderkoi | gzip > backup-$(date +\%F).sql.gz`, copy to a second location
+- [ ] Confirm backups are running: `docker compose ps` shows `backup` Up, and `backend/backups/` has a fresh `.dump` (section 7)
+- [ ] Point the offsite copy at `backend/backups/` — a backup that only lives on this VPS is not a backup (section 7)
+- [ ] Test one restore into a scratch database (section 8) — before you need it, not during an outage
 - [ ] Uptime monitoring on `/health` and `/ready` (UptimeRobot/BetterStack free tier)
 - [ ] Try one real signup + one real order end to end
 
@@ -143,13 +145,129 @@ docker compose --profile edge up --build -d     # rebuilds changed images, runs 
 
 The backend runs `alembic upgrade head` before every start — schema updates apply automatically. Data volumes are untouched by rebuilds.
 
-## 7. Restoring a backup
+**Prune the old images.** Every `--build` leaves the previous image dangling. On
+a small VPS that adds up quietly until the disk fills — and a full disk is not a
+clean failure, it corrupts Postgres writes. Check and clean up:
 
 ```bash
-gunzip -c backup-2026-09-12.sql.gz | docker compose exec -T db psql -U orderkoi -d orderkoi
+docker system df -v          # what is actually using the space
+docker image prune -f        # dangling images from previous builds — always safe
+docker builder prune -f      # build cache (rebuilds get slower afterwards)
 ```
 
-(Run `docker compose stop backend` first so nothing writes mid-restore, then `start`.)
+Neither touches `orderkoi_pgdata` or any named volume — images and volumes are
+separate, so a mistyped prune cannot delete your data. `docker system prune -a
+--volumes` **would**, so don't run that one on this host.
+
+A cron line keeps it tidy without you remembering:
+
+```bash
+# /etc/cron.d/orderkoi-prune
+0 4 * * 0 root docker image prune -f >/dev/null 2>&1
+```
+
+
+## 7. Backups
+
+The stack runs its own backup container — **there is no cron job to set up.**
+
+```bash
+docker compose ps                             # `backup` should be Up
+ls -lh backend/backups/                       # the dumps land here
+docker compose logs --tail=20 backup          # what it has been doing
+```
+
+Every `BACKUP_INTERVAL_HOURS` (default 24) it dumps the database to
+`./backend/backups/orderkoi-<UTC timestamp>.dump`, keeps the newest `BACKUP_KEEP`
+(default 14), and prunes the rest. Both are `.env` values — no code change:
+
+```bash
+BACKUP_INTERVAL_HOURS=6
+BACKUP_KEEP=30
+```
+
+Three details make the difference between "a file exists" and "a backup":
+
+| | Why |
+|---|---|
+| It writes `*.partial` and renames only after success | A dump cut short by a crash or a full disk can never be mistaken for a good one |
+| It verifies each dump with `pg_restore --list` before keeping it | An unreadable archive is deleted and the failure is logged, rather than discovered years later |
+| It is `postgres:17-alpine`, the database's own image | `pg_dump` refuses to dump a server **newer** than itself, so the client can never fall behind |
+
+A backup that only exists on the machine it protects is not a backup. Add a
+host-side copy to a different provider — a cron line is enough:
+
+```bash
+# /etc/cron.d/orderkoi-offsite — adjust the path and destination
+30 3 * * * root rsync -a --delete /opt/orderkoi/backend/backups/ user@other-host:/backups/orderkoi/
+```
+
+(or `rclone copy` to S3/B2/Drive — anything that isn't this VPS.)
+
+**Test a restore before you need one.** An untested backup is a guess. Do it
+against a throwaway database, never the live one — section 8 covers the
+mechanics, and the cheap version is: restore the newest dump into a scratch
+database and check the row counts.
+
+Want a dump right now, without waiting for the interval?
+
+```bash
+docker compose run --rm -e BACKUP_ONCE=1 backup
+```
+
+## 8. Restoring a backup
+
+Stop the API first so nothing writes mid-restore, then put it back afterwards:
+
+```bash
+docker compose stop backend
+```
+
+**Option A — restore over the existing database** (drops and recreates the
+objects the dump contains; anything the dump doesn't know about is left alone):
+
+```bash
+docker compose exec backup pg_restore \
+  --clean --if-exists --single-transaction \
+  -d orderkoi /backups/orderkoi-20260916-064156.dump
+```
+
+`docker compose exec backup …` is the right container: it holds the dumps
+(mounted at `/backups`) and already carries the `PGHOST`/`PGUSER`/`PGPASSWORD`
+for the database. `--single-transaction` makes the whole restore atomic — it
+either completes or changes nothing, so a half-restored database is not a state
+you can end up in.
+
+**Option B — guaranteed-exact state** (wipe the database, then restore into it).
+Use this when you want the server to match the dump and nothing else:
+
+```bash
+docker compose exec -T db psql -U orderkoi -d postgres -c "DROP DATABASE orderkoi WITH (FORCE);"
+docker compose exec -T db psql -U orderkoi -d postgres -c "CREATE DATABASE orderkoi OWNER orderkoi;"
+docker compose exec backup pg_restore -d orderkoi /backups/orderkoi-20260916-064156.dump
+```
+
+Then bring the API back and **verify it actually restored**:
+
+```bash
+docker compose start backend
+docker compose exec -T db psql -U orderkoi -d orderkoi \
+  -c "SELECT version_num FROM alembic_version;" \
+  -c "SELECT count(*) AS sellers FROM sellers;" \
+  -c "SELECT count(*) AS orders FROM orders;"
+```
+
+If the row counts look like your data and `alembic_version` matches the deployed
+revision, the restore worked. If `alembic_version` is *ahead* of your code,
+`git pull` — the dump came from a newer deploy.
+
+> **Do not restore a `.dump` by piping it through `psql`.** These dumps are in
+> PostgreSQL's custom format (`-Fc`) — compressed, and the only format
+> `pg_restore` can `--clean` or partially restore from. Feeding one to `psql`
+> fails immediately. (The reverse mistake is worse: laying a *plain SQL* dump
+> over a live database prints dozens of `relation already exists` errors while
+> `psql` still exits **0** — a silent, partial restore that looks like success.
+> That is why this guide no longer documents the `gunzip … | psql` form.)
 
 ---
 
@@ -164,3 +282,5 @@ gunzip -c backup-2026-09-12.sql.gz | docker compose exec -T db psql -U orderkoi 
 | 429 Too Many Requests everywhere | You're going through a proxy without forwarded headers being trusted — this stack is configured correctly (uvicorn `FORWARDED_ALLOW_IPS=*`, backend port never public) |
 | Backend won't boot in production | Almost always `SECRET_KEY` — must be set, not the default, ≥32 chars |
 | Let's Encrypt fails on the VPS | DNS A-records not resolving yet, or ports 80/443 blocked by the VPS firewall |
+| `backend/backups/` stays empty | `docker compose logs backup` — usually `POSTGRES_PASSWORD` doesn't match the database's. The log says `BACKUP FAILED … no new backup written`, and no file is left behind on purpose |
+| Restore prints `relation already exists` warning spam | The dump was piped through `psql` instead of `pg_restore` (section 8). Note `psql` still exits **0** in that case — the restore half-failed and reported success |

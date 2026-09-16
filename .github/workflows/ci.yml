@@ -1,0 +1,168 @@
+name: CI
+
+# Three independent gates, one per thing that can silently rot:
+#
+#   backend   — the test suite, plus a migration-drift check. The
+#               check is the important half: it fails when the models
+#               no longer match the migration head, which is exactly
+#               the bug that reaches production as a missing column.
+#   frontend  — lint, a real production build, and a regression test
+#               that the build still REFUSES to run without
+#               VITE_API_URL (otherwise it silently bakes in
+#               localhost:8000 and every deployed page calls nothing).
+#   compose   — docker-compose.yml still interpolates. Cheap, and it
+#               catches a ${VAR} typo or a missing .env.example entry
+#               that would otherwise only surface on the server.
+#
+# No .env exists in CI (it's gitignored), so every value below comes
+# from this file — the same path a fresh deployment takes.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push to the same branch makes the previous run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Same major version as production (docker-compose.yml) — the
+        # migration check below runs real DDL against it.
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: orderkoi
+          POSTGRES_PASSWORD: ci-password
+          POSTGRES_DB: orderkoi
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U orderkoi"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      # Deliberately PG_* and NOT DATABASE_URL: a full URL wins over the
+      # discrete parts in app/config.py, which would defeat the
+      # PG_DATABASE=orderkoi_test override that tests/conftest.py sets.
+      PG_HOST: localhost
+      PG_PORT: "5432"
+      PG_USER: orderkoi
+      PG_PASSWORD: ci-password
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"  # matches backend/Dockerfile
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Migrations apply to an empty database
+        working-directory: backend
+        env:
+          PG_DATABASE: orderkoi
+        run: alembic upgrade head
+
+      - name: Migrations match the models
+        working-directory: backend
+        env:
+          PG_DATABASE: orderkoi
+        run: |
+          # Fails with "New upgrade operations detected" when a model
+          # changed without a migration. The database is at head at
+          # this point, so any difference is drift.
+          alembic check
+
+      - name: Tests
+        working-directory: backend
+        # conftest.py points the suite at orderkoi_test and creates it
+        # on first use (the CI service role owns CREATEDB).
+        run: pytest -q
+
+  frontend:
+    name: Frontend lint and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"  # matches frontend/Dockerfile
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: The build must refuse to run without VITE_API_URL
+        # Regression test for the guard in vite.config.js. Without it a
+        # build succeeds and bakes http://localhost:8000 into the
+        # bundle, so the deployed site loads but every API call fails.
+        # VITE_API_URL is deliberately NOT set at job level.
+        run: |
+          if npm run build; then
+            echo "::error::Build succeeded with VITE_API_URL unset — the guard in vite.config.js is gone."
+            exit 1
+          fi
+          echo "Build correctly refused to run without VITE_API_URL."
+
+      - name: Build
+        env:
+          VITE_API_URL: https://api.orderkoi.example.com
+        run: npm run build
+
+      - name: The bundle must not contain localhost
+        run: |
+          # Belt and braces: the guard above only runs when the variable
+          # is missing. This catches it being present but wrong.
+          if grep -rIl "localhost:8000" dist/; then
+            echo "::error::The built bundle references localhost:8000 — VITE_API_URL was not applied."
+            exit 1
+          fi
+          echo "No localhost references in dist/."
+
+  compose:
+    name: Compose config
+    runs-on: ubuntu-latest
+    env:
+      # Placeholders — compose only needs them to be non-empty for
+      # docker-compose.yml's ${VAR:?} guards. Values are never used
+      # here; nothing is built or started.
+      POSTGRES_PASSWORD: ci-placeholder-password
+      SECRET_KEY: ci-placeholder-secret-key-32-characters-minimum
+      CORS_ORIGINS: '["https://orderkoi.example.com"]'
+      FRONTEND_URL: https://orderkoi.example.com
+      VITE_API_URL: https://api.orderkoi.example.com
+      BKASH_NUMBER: "01700000000"
+      SUPPORT_EMAIL: support@orderkoi.example.com
+      # Required even without --profile edge: compose interpolates the
+      # whole file before it filters services by profile.
+      SITE_DOMAIN: orderkoi.example.com
+      API_DOMAIN: api.orderkoi.example.com
+      ACME_EMAIL: admin@orderkoi.example.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Default profile
+        run: docker compose config --quiet
+
+      - name: Edge profile
+        run: docker compose --profile edge config --quiet
