@@ -30,6 +30,19 @@ class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
 
+class PasswordChange(BaseModel):
+    """Changing your own password while signed in.
+
+    Both fields are length-checked here rather than in the route so a
+    malformed request is a 422 (a schema problem) and only a *wrong*
+    current password is a 400 (a credentials problem) — the two need
+    different messages in the form.
+    """
+
+    current_password: str = Field(min_length=1, max_length=64)
+    new_password: str = Field(min_length=8, max_length=64)
+
+
 class ResetPasswordRequest(BaseModel):
     token: str = Field(min_length=10, max_length=128)
     new_password: str = Field(min_length=8, max_length=64)

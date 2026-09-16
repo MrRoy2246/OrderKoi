@@ -234,6 +234,18 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ token, new_password: newPassword }),
       }),
+    // Change your password while signed in. Returns a *new* token: the
+    // change revokes every token minted before it, including the one
+    // that made the request, so the caller must store this one or the
+    // next request signs them out.
+    changePassword: (currentPassword, newPassword) =>
+      request("/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+        }),
+      }),
     // Consumes the token from the signup email's verification link
     verifyEmail: (token) =>
       request(`/auth/verify-email?token=${encodeURIComponent(token)}`),

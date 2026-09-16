@@ -13,7 +13,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.deps import get_current_seller, suspended_error
 from app.email import send_email
-from app.emails import welcome_verification
+from app.emails import password_changed, welcome_verification
 from app import login_throttle
 from app.models import (
     EmailVerificationToken,
@@ -25,6 +25,7 @@ from app.models import (
 )
 from app.schemas import (
     ForgotPasswordRequest,
+    PasswordChange,
     ResendVerificationRequest,
     ResetPasswordRequest,
     SellerCreate,
@@ -279,6 +280,83 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     db.commit()
 
     return {"detail": "Password updated. You can now log in with your new password."}
+
+
+@router.post(
+    "/change-password",
+    response_model=Token,
+    summary="Change your own password while signed in",
+)
+def change_password(
+    payload: PasswordChange,
+    db: Session = Depends(get_db),
+    seller: Seller = Depends(get_current_seller),
+) -> Token:
+    """Change the password of the account the caller is signed in as.
+
+    Until now the only way to change a password was the forgot-password
+    email round trip — which works, but it means signing out of the
+    account you are already in, waiting for an email, and using a link
+    that expires. This is the same operation without the detour.
+
+    Returns a *new* token. Every token minted before now is rejected
+    (token_invalid_before), which is the point — a password change is
+    how someone evicts whoever else has their password. The current
+    session is kept alive by reissuing, so the device that made the
+    change isn't thrown out with the others.
+    """
+    # Per-account lockout, same counter and window as login: a signed-in
+    # attacker with a stolen token gets 5 guesses at the current
+    # password before the account freezes. Reusing login's throttle is
+    # deliberate — the thing being guessed is the same password, so a
+    # separate counter would just be a second way in.
+    remaining = login_throttle.lockout_remaining(seller.email)
+    if remaining is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "Too many failed attempts. This account is temporarily "
+                "locked — try again in a few minutes."
+            ),
+            headers={"Retry-After": str(int(remaining) + 1)},
+        )
+
+    # 400, not 401: on this route a 401 already means "your token
+    # expired" (get_current_seller), and the frontend treats an
+    # unexpected 401 as exactly that — it would sign the user out
+    # instead of showing a form error. A wrong current password is a
+    # bad request from someone who is authenticated just fine.
+    if not verify_password(payload.current_password, seller.hashed_password):
+        login_throttle.record_failure(seller.email)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="That's not your current password.",
+        )
+
+    if verify_password(payload.new_password, seller.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Your new password must be different from your current one.",
+        )
+
+    seller.hashed_password = hash_password(payload.new_password)
+    # Whole-second resolution, for the same reason as reset_password:
+    # JWT `iat` is second-granular, so a microsecond cutoff would reject
+    # the replacement token below when it is minted in this same second.
+    seller.token_invalid_before = utcnow().replace(microsecond=0)
+    db.commit()
+
+    login_throttle.clear(seller.email)
+
+    # Security notice. send_email never raises, so a mail problem can't
+    # fail a password change that has already been committed.
+    subject, body = password_changed(
+        store_name=seller.store_name,
+        support_email=settings.support_email,
+    )
+    send_email(to=seller.email, subject=subject, body=body)
+
+    return Token(access_token=create_access_token(seller.id))
 
 
 @router.get(

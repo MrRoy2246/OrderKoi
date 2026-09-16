@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { api, getErrorMessage } from "../api/client";
+import ChangePasswordForm from "../components/ChangePasswordForm";
 import Icon from "../components/icons";
 import PlanSection from "../components/PlanSection";
 import { parseServerDate } from "../utils/orderStatus";
@@ -8,9 +9,9 @@ import { parseServerDate } from "../utils/orderStatus";
 /**
  * Settings — the seller's account hub: store profile (name/phone),
  * the shareable public order-form link (copy to clipboard), the
- * subscription card (PlanSection: plans, bKash payment, history) and
- * logout. The store slug is fixed — it's the public URL customers
- * already have.
+ * subscription card (PlanSection: plans, bKash payment, history), the
+ * password change form, and the account summary. The store slug is
+ * fixed — it's the public URL customers already have.
  */
 export default function Settings() {
   const { seller, refresh } = useAuth();
@@ -118,6 +119,8 @@ export default function Settings() {
 
       <PlanSection />
 
+      <ChangePasswordForm />
+
       <section className="card">
         <h3>Store profile</h3>
         <form onSubmit={handleSubmit} noValidate>
@@ -173,8 +176,8 @@ export default function Settings() {
           </div>
         </dl>
         <p className="muted-note">
-          Need to change your email or password? Contact support — self-service
-          for that comes in a future update.
+          Your email is your login and can't be changed here yet — contact support
+          and we'll move the account for you.
         </p>
       </section>
     </div>

@@ -75,3 +75,27 @@ def status_changed(
         f"— {store_name} via OrderKoi"
     )
     return subject, body
+
+
+def password_changed(store_name: str, support_email: str) -> tuple[str, str]:
+    """Security notice after a signed-in password change.
+
+    Sent to the account owner even though they are the one who just did
+    it: the whole point is the case where they didn't. It goes out
+    after the change has already happened, so it can only ever tell
+    someone to act, never ask them to click a link — a "confirm this
+    change" link in an inbox is indistinguishable from phishing.
+    """
+    subject = "Your OrderKoi password was changed"
+    body = (
+        f"Hello {store_name},\n\n"
+        "The password on your OrderKoi account was just changed, and "
+        "every other signed-in device was signed out.\n\n"
+        "If that was you, there's nothing to do — you're already signed "
+        "in on the device you made the change from.\n\n"
+        "If it wasn't you, someone else has your password. Reset it now "
+        "from the login page (\"Forgot password?\"), which will sign them "
+        f"out too, and tell us at {support_email}.\n\n"
+        "— OrderKoi"
+    )
+    return subject, body
