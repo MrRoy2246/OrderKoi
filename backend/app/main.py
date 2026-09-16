@@ -19,7 +19,11 @@ settings = get_settings()
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    # filename:lineno on every line. A log that says "could not send
+    # email" without saying WHERE is a log you have to grep the source
+    # to use — and this format is what makes the tracebacks from
+    # unhandled_exception_handler below point straight at the frame.
+    format="%(asctime)s %(levelname)s [%(name)s] %(filename)s:%(lineno)d %(message)s",
 )
 logger = logging.getLogger("orderkoi")
 
