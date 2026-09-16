@@ -4,8 +4,6 @@ Every route is scoped to the logged-in seller: a seller can only
 see and touch their own orders, enforced in code (not just UI).
 """
 
-import csv
-import io
 import random
 import secrets
 import time
@@ -19,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.csv_export import orders_csv_response
 from app.database import get_db
 from app.deps import get_current_seller
 from app.email import send_email
@@ -37,7 +36,6 @@ from app.timezone import (
     business_day,
     business_today,
     day_bounds_utc,
-    to_business_time,
 )
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -240,7 +238,7 @@ def _validate_date_range(start: date | None, end: date | None) -> None:
     same error, so the UI can treat both identically."""
     if start is not None and end is not None and start > end:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Start date must be before (or equal to) the end date.",
         )
 
@@ -257,7 +255,7 @@ def list_orders(
     q: str | None = Query(default=None, max_length=100, description="Search name/phone/email/order number"),
     start: date | None = Query(default=None, description="Range start (YYYY-MM-DD, inclusive)"),
     end: date | None = Query(default=None, description="Range end (YYYY-MM-DD, inclusive)"),
-    limit: int = Query(default=20, ge=1, le=100),
+    limit: int = Query(default=20, ge=1, le=settings.max_page_size),
     offset: int = Query(default=0, ge=0),
     seller: Seller = Depends(get_current_seller),
     db: Session = Depends(get_db),
@@ -308,49 +306,12 @@ def export_orders_csv(
         .all()
     )
 
-    buffer = io.StringIO()
-    # UTF-8 BOM so Excel detects the encoding (names can be Bengali)
-    buffer.write("\ufeff")
-    writer = csv.writer(buffer)
-    writer.writerow(
-        [
-            "Order #",
-            "Date",
-            "Customer name",
-            "Phone",
-            "Email",
-            "Address",
-            "Items",
-            "Total (Tk)",
-            "Status",
-            "Source",
-            "Tracking code",
-            "Notes",
-        ]
-    )
-    for order in orders:
-        writer.writerow(
-            [
-                order.order_number,
-                to_business_time(order.created_at).strftime("%Y-%m-%d %H:%M"),
-                order.customer_name,
-                order.customer_phone,
-                order.customer_email or "",
-                order.customer_address or "",
-                "; ".join(f"{item['name']} x{item['quantity']}" for item in order.items),
-                f"{order.total_price:.2f}",
-                order.status,
-                order.source,
-                order.tracking_code,
-                order.notes or "",
-            ]
-        )
-
-    filename = f"orderkoi-orders-{business_today().isoformat()}.csv"
-    return StreamingResponse(
-        iter([buffer.getvalue()]),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    # Columns, encoding and Excel date handling all live in
+    # app/csv_export.py \u2014 shared with the admin's export so the two
+    # cannot drift apart.
+    return orders_csv_response(
+        orders,
+        filename=f"orderkoi-orders-{business_today().isoformat()}.csv",
     )
 
 
@@ -376,18 +337,18 @@ def stats_summary(
     if range_filter == "custom":
         if start is None or end is None:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Custom range needs both start and end dates.",
             )
         if start > end:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Start date must be before (or equal to) the end date.",
             )
         window_days = (end - start).days + 1
         if window_days > 366:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Custom range can span at most one year.",
             )
         window_start, window_end = start, end

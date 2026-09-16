@@ -1,6 +1,6 @@
 """Alembic migration environment.
 
-The database URL comes from the app's settings (backend/.env or real
+The database URL comes from the app's settings (the repo-root .env or real
 environment variables) — the same source of truth as the application,
 so migrations always target the same database the app runs on.
 """

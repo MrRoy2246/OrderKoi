@@ -82,13 +82,13 @@ pytest
 ## Database
 
 - Dev: **PostgreSQL 17** (local install, port **5433** — PG 15 owns 5432). Dedicated `orderkoi` role + database; the app never uses the postgres superuser.
-- All connection settings live in `.env` (`PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`) — change the user, password, host, or port there and the app follows, no code change. A full `DATABASE_URL` overrides the parts; one of the two must be set (the app refuses to boot without a database).
+- All connection settings live in the **repo-root `.env`** (`PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`) — change the user, password, host, or port there and the app follows, no code change. A full `DATABASE_URL` overrides the parts; one of the two must be set (the app refuses to boot without a database).
 - Schema is managed by **Alembic**: set up or update a database with `alembic upgrade head` (from `backend/`). After changing a model in `app/models.py`, generate a migration with `alembic revision --autogenerate -m "..."`, review it, then `upgrade head`.
 - Tests run on the same engine as production, in a dedicated **`orderkoi_test`** database (selected via `PG_DATABASE` env override in `tests/conftest.py`; auto-created on first run — needs `CREATEDB` on the role, granted once: `ALTER ROLE orderkoi CREATEDB;`). Dev data is never touched; the schema is created/dropped per session.
 
 ## Business config (prices, allowance, bKash, contact) — all env-driven
 
-Every public business value lives in `.env` and is served live by **`GET /public/stores/pricing`** (no auth):
+Every public business value lives in the **repo-root `.env`** and is served live by **`GET /public/stores/pricing`** (no auth):
 
 | Env var | Default | Controls |
 |---|---|---|
@@ -105,14 +105,14 @@ Every public business value lives in `.env` and is served live by **`GET /public
 python -m scripts.backup_db        # from backend/ — also run by Task Scheduler daily at 3:07 AM
 ```
 
-- `pg_dump` custom format → `backend/backups/orderkoi-YYYYMMDD-HHMMSS.dump` (restore with `pg_restore`). Credentials come from `.env`; `pg_dump` is located via `PG_BINDIR`, PATH, or the standard install dir.
+- `pg_dump` custom format → `backend/backups/orderkoi-YYYYMMDD-HHMMSS.dump` (restore with `pg_restore`). Credentials come from the repo-root `.env`; `pg_dump` is located via `PG_BINDIR`, PATH, or the standard install dir.
 - Keeps the newest 14 backups, deletes older ones automatically
 - The Windows scheduled task is **"OrderKoi DB backup"** — view it in Task Scheduler or `schtasks /query /tn "OrderKoi DB backup"`
 - This script's dumps are **plaintext**, and it only ever touches `*.dump`. The Docker `backup` service writes **encrypted** `*.dump.enc` files into the same directory and the two never prune each other — see section 7 of `docs/DEPLOYMENT.md` for the container and the passphrase it needs.
 
 ## Email
 
-- All SMTP settings live in `.env` (never commit it). Empty `SMTP_HOST` = emails print to the console instead of sending.
+- All SMTP settings live in the repo-root `.env` (never commit it). Empty `SMTP_HOST` = emails print to the console instead of sending. Force that with `EMAIL_BACKEND=console` — an empty `SMTP_HOST` cannot express it once `.env` sets a real host.
 - Sends happen in **background threads** — the API never waits for Gmail, and a failed send retries 3 times (2s/10s backoff) before logging `EMAIL DELIVERY FAILED`. A total failure never breaks the request.
 - Email templates (welcome/verification, password reset, order received, status change) are in `app/emails.py`.
 
@@ -131,7 +131,8 @@ python -m scripts.backup_db        # from backend/ — also run by Task Schedule
 backend/
 ├── app/
 │   ├── main.py        # FastAPI app, routes registration, CORS, security headers, /health + /ready
-│   ├── config.py      # Settings from .env (business config: prices, allowance, bKash, support email)
+│   ├── config.py      # Settings from the repo-root .env (resolved by absolute path)
+│   ├── csv_export.py  # CSV rendering shared by the seller and admin exports (BOM, columns, dates)
 │   ├── database.py    # DB engine & session (PostgreSQL pool, UTC-pinned sessions)
 │   ├── email.py       # SMTP send — background threads + retry, console fallback
 │   ├── emails.py      # Email templates (welcome/verify, reset, order received, status change)
@@ -155,9 +156,12 @@ backend/
 ├── backups/           # Backup output (gitignored)
 ├── tests/             # pytest suite (189 tests)
 ├── requirements.txt
-├── .env.example       # Template for secrets — copy to .env
 └── venv/              # Virtual environment (never commit)
 ```
+
+> **There is no `backend/.env`.** All configuration lives in the single `.env` at the repo root —
+> see **[ENVIRONMENT.md](./ENVIRONMENT.md)** for every variable, its default, and what changing it
+> does.
 
 ## Troubleshooting
 

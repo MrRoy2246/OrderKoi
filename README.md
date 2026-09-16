@@ -70,7 +70,7 @@ docker compose up -d      # http://localhost:8090 (frontend) + http://localhost:
 docker compose exec backend python -m scripts.create_admin admin@example.com   # first admin — sellers sign up via the website
 ```
 
-Full guide — fresh databases, the admin account, VPS deployment, backups, restore: **[docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)**.
+Full guide — fresh databases, the admin account, VPS deployment, backups, restore: **[docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)**. Every environment variable, with defaults and what changing it affects: **[docs/ENVIRONMENT.md](./docs/ENVIRONMENT.md)**.
 
 ## Local development (without Docker)
 

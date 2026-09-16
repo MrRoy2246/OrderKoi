@@ -12,7 +12,7 @@ import {
 } from "../utils/proPricing";
 
 /** Payment instructions — the bKash number/type comes from the live
- * backend config (BKASH_NUMBER/BKASH_TYPE in backend/.env), so it
+ * backend config (BKASH_NUMBER/BKASH_TYPE in the repo-root .env), so it
  * renders before/after the fetch with the current default. */
 function paymentInstructions() {
   const bkash = getBkash();

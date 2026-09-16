@@ -14,7 +14,7 @@ const LAST_UPDATED = "6 September 2026";
 
 export default function Terms() {
   // Support email comes from the live backend config (SUPPORT_EMAIL in
-  // backend/.env) — falls back to the default until it loads
+  // the repo-root .env) — falls back to the default until it loads
   const [supportEmail, setSupportEmail] = useState(getSupportEmail());
 
   useEffect(() => {

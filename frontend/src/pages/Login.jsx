@@ -35,7 +35,7 @@ export default function Login() {
   const [resending, setResending] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   // Support address in the suspension notice, from the live backend
-  // config (SUPPORT_EMAIL in backend/.env) — same pattern as the legal
+  // config (SUPPORT_EMAIL in the repo-root .env) — same pattern as the legal
   // pages, so the address is never hardcoded here
   const [supportEmail, setSupportEmail] = useState(getSupportEmail());
 

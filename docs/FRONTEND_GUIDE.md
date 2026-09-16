@@ -28,6 +28,10 @@ npm run dev
 - App URL: `http://localhost:5173`
 - Auto-reloads when code changes — keep it running while developing
 
+> Configuration comes from the single `.env` at the **repo root**, one directory up — Vite's
+> `envDir` points there. Only `VITE_`-prefixed keys reach browser code; see
+> **[ENVIRONMENT.md](./ENVIRONMENT.md)**.
+
 ## Key pages
 
 | Route | What | Who |
@@ -47,7 +51,7 @@ npm run dev
 
 ## Live business config (prices, allowance, bKash, contact)
 
-Pro prices, the free-plan allowance, bKash details, and the support email are **not hard-coded**: `src/utils/proPricing.js` fetches `GET /public/stores/pricing` at runtime (module-level cache, fallbacks if the backend is down) and exposes `getProOptions()`, `proPriceFor(months)`, `getFreePlanOrders()`, `getBkash()`, `getSupportEmail()`. Pages call `fetchPublicConfig()` on mount, then bump a state counter to re-render once it lands. **Offers change in `backend/.env` + backend restart — no frontend rebuild.** If you add a new business value: extend `PublicConfigOut` (backend) → the fallback object in `proPricing.js` → a getter → consumers.
+Pro prices, the free-plan allowance, bKash details, and the support email are **not hard-coded**: `src/utils/proPricing.js` fetches `GET /public/stores/pricing` at runtime (module-level cache, fallbacks if the backend is down) and exposes `getProOptions()`, `proPriceFor(months)`, `getFreePlanOrders()`, `getBkash()`, `getSupportEmail()`. Pages call `fetchPublicConfig()` on mount, then bump a state counter to re-render once it lands. **Offers change in the repo-root `.env` + backend restart — no frontend rebuild.** If you add a new business value: extend `PublicConfigOut` (backend) → the fallback object in `proPricing.js` → a getter → consumers.
 
 ## Production build (Docker)
 
@@ -78,7 +82,7 @@ npx playwright test
   cd backend && RATE_LIMIT_ENABLED=false uvicorn app.main:app --port 8000
   ```
 
-  The limiter is off for the run, not for the app — see the rate-limit table in `.env.example` for the real values. (Running the two spec files individually with a minute between them also works, and keeps the limiter on.) The per-account login lockout (`LOGIN_MAX_FAILURES`, 5 wrong passwords in 15 minutes) is separate and still applies — the suite never uses a wrong password, so it does not trip it.
+  The limiter is off for the run, not for the app — see the rate-limit table in **[ENVIRONMENT.md](./ENVIRONMENT.md)** for the real values. (Running the two spec files individually with a minute between them also works, and keeps the limiter on.) The per-account login lockout (`LOGIN_MAX_FAILURES`, 5 wrong passwords in 15 minutes) is separate and still applies — the suite never uses a wrong password, so it does not trip it.
 - Uses the long-lived dev seller account (`test@gmail.com`) — no email-verification round trip needed
 - Tests clean up their own orders through the API. `smoke.spec.js` still leaves one unverified `e2e-<timestamp>@example.com` account per run (there is no delete-seller endpoint by design) — harmless, but the dev database accumulates them.
 - First run only: `npx playwright install chromium`
@@ -102,7 +106,7 @@ frontend/
 │   ├── api/client.js      # API wrapper → talks to backend
 │   ├── auth/AuthContext.jsx  # Token storage, login state (signup does NOT auto-login — email must be verified first)
 │   ├── pages/             # One file per page (dashboard, orders, settings, admin/*, public form, tracking, verify-email, legal, 404)
-│   ├── components/        # Reusable UI (badges, meters, modals, charts, skeletons)
+│   ├── components/        # Reusable UI (badges, meters, modals, charts, skeletons, pagination)
 │   └── utils/             # Date/business-time, order formatting, live business config (proPricing.js), hooks
 ├── e2e/                   # Playwright tests — smoke.spec.js (critical paths) + pages.spec.js (every route, console watched), watch.js
 ├── scripts/

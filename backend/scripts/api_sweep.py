@@ -8,7 +8,7 @@ backend forced to "console". It proves the *code* is right. It cannot
 prove the *deployment* is: that uvicorn really serves these routes,
 that the real dev database accepts the writes, and that an email
 actually leaves the machine over SMTP. That is what this script
-checks — over HTTP, with backend/.env exactly as it stands.
+checks — over HTTP, with the repo-root .env exactly as it stands.
 
 Usage (with the dev servers up — see docs/BACKEND_GUIDE.md):
 

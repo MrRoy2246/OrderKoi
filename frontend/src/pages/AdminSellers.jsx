@@ -4,6 +4,7 @@ import { api, getErrorMessage } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import AdminProModal from "../components/AdminProModal";
 import Icon from "../components/icons";
+import Pagination from "../components/Pagination";
 import { SkeletonRows } from "../components/States";
 import { formatDateTime, formatTk, parseServerDate } from "../utils/orderStatus";
 
@@ -183,9 +184,6 @@ export default function AdminSellers() {
     }
   }
 
-  const showingFrom = total === 0 ? 0 : offset + 1;
-  const showingTo = Math.min(offset + PAGE_SIZE, total);
-
   const planSummary =
     planTab === "all"
       ? `${total} account${total === 1 ? "" : "s"} on your platform`
@@ -359,33 +357,13 @@ export default function AdminSellers() {
       </div>
       )}
 
-      {total > PAGE_SIZE && (
-        <div className="pagination">
-          <span className="pagination-info">
-            Showing {showingFrom}–{showingTo} of {total}
-          </span>
-          <div className="pagination-buttons">
-            <button
-              type="button"
-              className="button button--outline button--small"
-              onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-              disabled={offset === 0 || loading}
-            >
-              <Icon name="chevronLeft" size={15} />
-              Previous
-            </button>
-            <button
-              type="button"
-              className="button button--outline button--small"
-              onClick={() => setOffset(offset + PAGE_SIZE)}
-              disabled={offset + PAGE_SIZE >= total || loading}
-            >
-              Next
-              <Icon name="chevronRight" size={15} />
-            </button>
-          </div>
-        </div>
-      )}
+      <Pagination
+        total={total}
+        offset={offset}
+        pageSize={PAGE_SIZE}
+        onChange={setOffset}
+        disabled={loading}
+      />
 
       <p className="muted-note">
         You are logged in as <strong>{me?.email}</strong> (admin). Admin accounts manage the

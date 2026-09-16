@@ -1,16 +1,31 @@
 """Application settings loaded from environment variables / .env file."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 from urllib.parse import quote_plus
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# The one .env for the whole repository, at its root — the same file
+# docker-compose.yml reads and the one docs/ENVIRONMENT.md documents.
+#
+# Absolute, from this module's own location, NOT the relative ".env" it
+# used to be: a relative env_file resolves against the process's current
+# working directory, so `uvicorn --app-dir backend` started from the
+# repo root loaded no file at all and the app died at boot with "No
+# database configured" — a failure with nothing in it pointing at the
+# real cause. The app now finds its config no matter where it is run
+# from (backend/, the repo root, an editor, a container).
+#
+# app/config.py -> app/ -> backend/ -> repo root
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
         # An env var set to the empty string counts as "not set" — this

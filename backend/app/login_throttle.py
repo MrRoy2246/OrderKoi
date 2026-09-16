@@ -24,7 +24,7 @@ settings = get_settings()
 
 # Failures before lockout, and how long things are remembered. All
 # three are settings so an operator can loosen or tighten the lock
-# without a code change (see backend/.env.example).
+# without a code change (see the repo-root .env.example).
 MAX_FAILURES = settings.login_max_failures
 FAILURE_WINDOW_SECONDS = settings.login_failure_window_minutes * 60
 LOCKOUT_SECONDS = settings.login_lockout_minutes * 60

@@ -1,5 +1,7 @@
 """Orders API tests: CRUD, workflow, ownership, validation."""
 
+import re
+
 import pytest
 
 
@@ -410,6 +412,18 @@ def test_export_csv_roundtrip(client, auth_headers):
     assert row["Address"] == 'Flat 4B, "Green" House, Road 12'
     assert row["Customer name"] == "Test Customer"
     assert row["Items"] == "Item x1"
+
+    # Date and Time ship as two columns, not one "2026-09-16 17:21"
+    # cell: Excel renders a combined cell as EMPTY when it types the
+    # column as Date, which is the bug this pins shut. Date is pure ISO
+    # (the one form Excel parses in every locale) and must be the
+    # business-local day, not the UTC one — the order was just created,
+    # so it is today where the seller is.
+    from app.timezone import business_today
+
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", row["Date"]), row["Date"]
+    assert row["Date"] == business_today().isoformat()
+    assert re.fullmatch(r"\d{2}:\d{2}", row["Time"]), row["Time"]
 
 
 def test_export_respects_status_filter(client, auth_headers):

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, getErrorMessage } from "../api/client";
 import Icon from "../components/icons";
+import Pagination from "../components/Pagination";
 import { EmptyState, SkeletonCard } from "../components/States";
 import {
   formatRelativeTime,
@@ -272,33 +273,13 @@ export default function AdminRequests() {
         </div>
       )}
 
-      {pendingTotal > PENDING_PAGE && (
-        <div className="pagination">
-          <span className="pagination-info">
-            Showing {pendingOffset + 1}–{Math.min(pendingOffset + PENDING_PAGE, pendingTotal)} of {pendingTotal}
-          </span>
-          <div className="pagination-buttons">
-            <button
-              type="button"
-              className="button button--outline button--small"
-              onClick={() => setPendingOffset(Math.max(0, pendingOffset - PENDING_PAGE))}
-              disabled={pendingOffset === 0 || loading}
-            >
-              <Icon name="chevronLeft" size={15} />
-              Previous
-            </button>
-            <button
-              type="button"
-              className="button button--outline button--small"
-              onClick={() => setPendingOffset(pendingOffset + PENDING_PAGE)}
-              disabled={pendingOffset + PENDING_PAGE >= pendingTotal || loading}
-            >
-              Next
-              <Icon name="chevronRight" size={15} />
-            </button>
-          </div>
-        </div>
-      )}
+      <Pagination
+        total={pendingTotal}
+        offset={pendingOffset}
+        pageSize={PENDING_PAGE}
+        onChange={setPendingOffset}
+        disabled={loading}
+      />
 
       <section className="card">
         <div className="card-header-row">

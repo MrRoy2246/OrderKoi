@@ -5,7 +5,7 @@
  *
  * Everything here is env-driven on the backend (PRO_PRICE_1M/6M/12M,
  * FREE_PLAN_ORDERS, BKASH_NUMBER, BKASH_TYPE, SUPPORT_EMAIL in
- * backend/.env): change a value there, restart the backend, and every
+ * the repo-root .env): change a value there, restart the backend, and every
  * surface — Settings pricing cards, free-plan meter and banners,
  * payment instructions, legal-page contact details, admin
  * expected-payment checks — follows. No frontend rebuild, no code
@@ -15,7 +15,7 @@
 import { API_URL } from "../api/client";
 
 /** Fallback values when the config endpoint can't be reached (also the
- * documented defaults in backend/.env.example). */
+ * documented defaults in the repo-root .env.example). */
 export const PRO_OPTIONS_FALLBACK = [
   { months: 1, price: 350, note: "try Pro out" },
   { months: 6, price: 1750, note: "save 17%" },

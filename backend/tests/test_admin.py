@@ -765,6 +765,7 @@ def test_seller_orders_csv_export(client, admin_headers, seller, order):
     assert body.startswith("﻿")
     assert "Order #" in body
     assert "Rahim Uddin" in body  # the conftest order's customer
+    assert "Time" in body  # Date and Time are separate columns — see app/csv_export.py
     assert seller["store_slug"] in response.headers["content-disposition"]
 
 

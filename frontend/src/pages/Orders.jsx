@@ -4,6 +4,7 @@ import { api, getErrorMessage } from "../api/client";
 import Icon from "../components/icons";
 import OrderFormModal from "../components/OrderFormModal";
 import FreeLimitBanner, { FreeOrderMeter } from "../components/FreeLimitBanner";
+import Pagination from "../components/Pagination";
 import { EmptyState, SkeletonRows } from "../components/States";
 import StatusBadge from "../components/StatusBadge";
 import useMediaQuery from "../utils/useMediaQuery";
@@ -229,9 +230,6 @@ export default function Orders() {
       window.open(trackingUrl(code), "_blank");
     }
   }
-
-  const showingFrom = total === 0 ? 0 : offset + 1;
-  const showingTo = Math.min(offset + PAGE_SIZE, total);
 
   // Human summary of the active date window, e.g. "Sep 1 – Sep 2"
   const dateSummary =
@@ -511,33 +509,13 @@ export default function Orders() {
         </div>
       )}
 
-      {total > PAGE_SIZE && (
-        <div className="pagination">
-          <span className="pagination-info">
-            Showing {showingFrom}–{showingTo} of {total}
-          </span>
-          <div className="pagination-buttons">
-            <button
-              type="button"
-              className="button button--outline button--small"
-              onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-              disabled={offset === 0 || loading}
-            >
-              <Icon name="chevronLeft" size={15} />
-              Previous
-            </button>
-            <button
-              type="button"
-              className="button button--outline button--small"
-              onClick={() => setOffset(offset + PAGE_SIZE)}
-              disabled={offset + PAGE_SIZE >= total || loading}
-            >
-              Next
-              <Icon name="chevronRight" size={15} />
-            </button>
-          </div>
-        </div>
-      )}
+      <Pagination
+        total={total}
+        offset={offset}
+        pageSize={PAGE_SIZE}
+        onChange={setOffset}
+        disabled={loading}
+      />
 
       {modalOpen && (
         <OrderFormModal onClose={() => setModalOpen(false)} onCreated={handleCreated} />

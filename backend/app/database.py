@@ -11,7 +11,7 @@ settings = get_settings()
 # each connection before use (survives Postgres restarts), and the pool
 # is sized to cover concurrent dashboard/order traffic. The pool size
 # and recycle window are settings — size them to your deployment
-# (see backend/.env.example) rather than editing this file.
+# (see the repo-root .env.example) rather than editing this file.
 #
 # The session timezone is pinned to UTC: every timestamp boundary the
 # app computes is UTC, and a server configured for another zone must

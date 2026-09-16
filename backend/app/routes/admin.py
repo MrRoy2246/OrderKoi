@@ -7,8 +7,6 @@ admin verifies the payment and activates the paid-for duration).
 """
 
 import calendar
-import csv
-import io
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -17,6 +15,7 @@ from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.csv_export import orders_csv_response
 from app.database import get_db
 from app.deps import get_current_admin
 from app.email import send_email
@@ -141,7 +140,7 @@ def list_sellers(
     q: str | None = Query(
         default=None, max_length=100, description="Search store name, email, or slug"
     ),
-    limit: int = Query(default=20, ge=1, le=100),
+    limit: int = Query(default=20, ge=1, le=settings.max_page_size),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     admin: Seller = Depends(get_current_admin),  # noqa: ARG001 — guards access
@@ -236,17 +235,17 @@ def platform_stats(
     if start is not None or end is not None:
         if start is None or end is None:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Custom range needs both start and end dates.",
             )
         if start > end:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Start date must be before (or equal to) the end date.",
             )
         if (end - start).days + 1 > 366:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Custom range can span at most one year.",
             )
         window_start, window_end, window_days = start, end, (end - start).days + 1
@@ -542,17 +541,17 @@ def seller_shop_stats(
         window_start, window_end = today - timedelta(days=29), today
     elif start is None or end is None:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Custom range needs both start and end dates.",
         )
     elif start > end:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Start date must be before (or equal to) the end date.",
         )
     elif (end - start).days + 1 > 366:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Custom range can span at most one year.",
         )
     else:
@@ -657,17 +656,17 @@ def export_seller_orders_csv(
         window_start, window_end = today - timedelta(days=29), today
     elif start is None or end is None:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Custom range needs both start and end dates.",
         )
     elif start > end:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Start date must be before (or equal to) the end date.",
         )
     elif (end - start).days + 1 > 366:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Custom range can span at most one year.",
         )
     else:
@@ -693,49 +692,14 @@ def export_seller_orders_csv(
         .all()
     )
 
-    buffer = io.StringIO()
-    # UTF-8 BOM so Excel detects the encoding (names can be Bengali)
-    buffer.write("﻿")
-    writer = csv.writer(buffer)
-    writer.writerow(
-        [
-            "Order #",
-            "Date",
-            "Customer name",
-            "Phone",
-            "Email",
-            "Address",
-            "Items",
-            "Total (Tk)",
-            "Status",
-            "Source",
-            "Tracking code",
-            "Notes",
-        ]
-    )
-    for order in orders:
-        writer.writerow(
-            [
-                order.order_number,
-                to_business_time(order.created_at).strftime("%Y-%m-%d %H:%M"),
-                order.customer_name,
-                order.customer_phone,
-                order.customer_email or "",
-                order.customer_address or "",
-                "; ".join(f"{item['name']} x{item['quantity']}" for item in order.items),
-                f"{order.total_price:.2f}",
-                order.status,
-                order.source,
-                order.tracking_code,
-                order.notes or "",
-            ]
-        )
-
-    filename = f"orderkoi-{seller.store_slug}-{window_start.isoformat()}-to-{window_end.isoformat()}.csv"
-    return StreamingResponse(
-        iter([buffer.getvalue()]),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    # Same shared renderer as the seller's own export — see
+    # app/csv_export.py.
+    return orders_csv_response(
+        orders,
+        filename=(
+            f"orderkoi-{seller.store_slug}-"
+            f"{window_start.isoformat()}-to-{window_end.isoformat()}.csv"
+        ),
     )
 
 
@@ -751,7 +715,7 @@ def list_upgrade_requests(
         pattern="^(all|pending|approved|rejected)$",
         description="all (pending first) | pending | approved | rejected",
     ),
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=50, ge=1, le=settings.max_admin_page_size),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     admin: Seller = Depends(get_current_admin),  # noqa: ARG001 — guards access
