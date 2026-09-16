@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
+from app.deps import SUSPENDED_HEADER
 from app.rate_limit import enforce_rate_limits
 from app.routes import admin, auth, orders, public, tracking
 
@@ -155,6 +156,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Custom response headers are invisible to browser JS unless they
+    # are named here. The frontend reads the suspension marker (see
+    # app/deps.py) to sign a cut-off seller out with a clear message
+    # rather than leaving them in a half-working session — without this
+    # line that header arrives as null and the check silently never
+    # fires.
+    expose_headers=[SUSPENDED_HEADER],
 )
 
 

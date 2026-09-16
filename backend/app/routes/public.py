@@ -104,7 +104,15 @@ def get_store(slug: str, db: Session = Depends(get_db)) -> PublicStoreOut:
     # A free-plan store that used its allowance is paused for customers
     # — the form knows up front so it can show a proper notice instead
     # of rejecting a filled-in submission
-    accepting = pro_plan_active(seller) or _lifetime_order_count(seller, db) < settings.free_plan_orders
+    #
+    # A suspended shop reports the same way, on purpose: the form's
+    # existing "temporarily paused" card already says the right thing
+    # ("if you've already placed an order, it's unaffected"), and a
+    # suspension is not a customer's business to be told about.
+    accepting = seller.suspended_at is None and (
+        pro_plan_active(seller)
+        or _lifetime_order_count(seller, db) < settings.free_plan_orders
+    )
     return PublicStoreOut(
         store_name=seller.store_name,
         slug=seller.store_slug,
@@ -124,6 +132,15 @@ def submit_order(
     db: Session = Depends(get_db),
 ) -> PublicOrderCreated:
     seller = _get_store(slug, db)
+
+    # Admin enforcement. The store page already reports is_accepting_orders
+    # = False so a customer sees a notice, but this endpoint is public and
+    # reachable directly — the page state is a courtesy, not a control.
+    if seller.suspended_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This store isn't accepting new orders right now.",
+        )
 
     # Honeypot tripped: the real form hides this field off-screen, so a
     # non-empty value means a bot. Answer with a plausible-looking

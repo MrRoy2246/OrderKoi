@@ -83,6 +83,22 @@ class Seller(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Admin enforcement: a shop that abuses the platform can be cut off
+    # without deleting the account. NULL = active.
+    #
+    # A timestamp rather than an `is_active` boolean because when it
+    # happened is the question actually asked later, and NULL keeps
+    # "active" the single default — a boolean would need backfilling and
+    # could be left NULL by a future insert.
+    #
+    # Suspension is deliberately reversible and non-destructive: the
+    # seller's existing orders stay intact and trackable, so a mistake
+    # costs a click, not a customer's data.
+    suspended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    suspended_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )

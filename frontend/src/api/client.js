@@ -65,11 +65,32 @@ function isAuthResultPath(path) {
   return AUTH_RESULT_PATHS.some((prefix) => path === prefix || path.startsWith(`${prefix}?`));
 }
 
+/**
+ * Marker the backend attaches to the 403 a suspended account gets
+ * (app/deps.py SUSPENDED_HEADER). A distinct signal rather than
+ * matching the message text, because that copy is free to be reworded
+ * and every other 403 — a seller touching an admin route, say — must
+ * not be mistaken for this one.
+ */
+const SUSPENDED_HEADER = "X-OrderKoi-Suspended";
+
 /** Expired/invalid session: drop the token and return to login.
  * A full page load is deliberate — it resets all React state cleanly. */
 function handleExpiredSession() {
   clearToken();
   window.location.assign("/login");
+}
+
+/**
+ * Suspended account: the token is still perfectly valid, so nothing
+ * ever expires on its own — the server refuses every request until an
+ * admin reinstates the account. Signing out and saying why beats
+ * leaving the seller in a dashboard where every page shows an error
+ * and nothing they try works.
+ */
+function handleSuspendedSession() {
+  clearToken();
+  window.location.assign("/login?suspended=1");
 }
 
 /**
@@ -93,6 +114,21 @@ export async function request(path, options = {}) {
   const response = await fetch(`${API_URL}${path}`, { ...options, headers });
 
   if (!response.ok) {
+    const error = new Error(`API request failed: ${response.status}`);
+    error.status = response.status;
+    try {
+      error.data = await response.json();
+    } catch {
+      error.data = null; // response had no JSON body
+    }
+
+    // Both redirects below are skipped on the auth forms themselves:
+    // there the page is already the right place to show the problem,
+    // and a full page load would wipe what the user typed.
+    if (response.status === 403 && response.headers.get(SUSPENDED_HEADER) && !isAuthResultPath(path)) {
+      handleSuspendedSession();
+    }
+
     // A 401 on a protected endpoint means the token expired (24h) or
     // was revoked. Show the login page instead of a cryptic error —
     // but never on the auth forms themselves (wrong password is a 401
@@ -101,13 +137,6 @@ export async function request(path, options = {}) {
       handleExpiredSession();
     }
 
-    const error = new Error(`API request failed: ${response.status}`);
-    error.status = response.status;
-    try {
-      error.data = await response.json();
-    } catch {
-      error.data = null; // response had no JSON body
-    }
     throw error;
   }
 
@@ -141,6 +170,14 @@ export async function downloadFile(path, fallbackName) {
     } catch {
       error.data = null;
     }
+
+    // Same suspension handling as request() — a download is just
+    // another protected request, and without this the seller gets a
+    // bare "download failed" instead of the real reason.
+    if (response.status === 403 && response.headers.get(SUSPENDED_HEADER)) {
+      handleSuspendedSession();
+    }
+
     throw error;
   }
 
@@ -262,6 +299,14 @@ export const api = {
       request(`/admin/sellers/${sellerId}/plan`, {
         method: "PATCH",
         body: JSON.stringify({ plan, ...(months ? { months } : {}), comp }),
+      }),
+    // Admin enforcement: cut a shop off, or put it back. The reason is
+    // recorded on the seller for the admin's own reference later — it
+    // is never shown to the suspended seller.
+    setSuspension: (sellerId, suspended, reason = null) =>
+      request(`/admin/sellers/${sellerId}/suspension`, {
+        method: "PATCH",
+        body: JSON.stringify({ suspended, reason }),
       }),
     upgradeRequests: (params = {}) =>
       request(`/admin/upgrade-requests${toQueryString(params)}`),

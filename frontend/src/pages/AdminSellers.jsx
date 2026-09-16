@@ -29,6 +29,26 @@ function RoleBadge({ role }) {
   return <span className="badge badge--shipped">Admin</span>;
 }
 
+/** Marks an account an admin has cut off. The tooltip carries the when
+ * and the why — the two questions asked later — since a bare badge
+ * would only say "something happened". */
+function SuspendedBadge({ seller }) {
+  if (!seller.suspended_at) return null;
+  const since = formatDateTime(seller.suspended_at);
+  return (
+    <span
+      className="badge badge--cancelled"
+      title={
+        seller.suspended_reason
+          ? `Suspended ${since} — ${seller.suspended_reason}`
+          : `Suspended ${since}`
+      }
+    >
+      Suspended
+    </span>
+  );
+}
+
 /** Active Pro — same rule as the backend's plan filter: a Pro plan with a
  * past expiry counts as Free. Keeps badges, actions, and the tab counts
  * in sync with what the server returned for the current filter. */
@@ -117,6 +137,52 @@ export default function AdminSellers() {
     setGrantTarget(null);
   }
 
+  /** Cut a shop off, or put it back.
+   *
+   * Suspending asks for a reason first — it is what the admin will want
+   * to know months later, and it costs one prompt now. An empty reason
+   * is allowed (cancel aborts, an empty OK means "no note"), which
+   * matters because a suspension should never be blocked on having a
+   * tidy explanation to hand. */
+  async function handleToggleSuspension(seller) {
+    const suspending = !seller.suspended_at;
+    let reason = null;
+
+    if (suspending) {
+      const answer = window.prompt(
+        `Suspend ${seller.store_name}?\n\n` +
+          "Their store stops taking orders and they can't log in. " +
+          "Existing orders keep working and tracking stays live.\n\n" +
+          "Reason (optional — recorded for your own reference):",
+        ""
+      );
+      if (answer === null) return; // cancelled
+      reason = answer.trim() || null;
+    } else if (
+      !window.confirm(
+        `Reinstate ${seller.store_name}? They'll be able to log in and take orders again.`
+      )
+    ) {
+      return;
+    }
+
+    setBusyId(seller.id);
+    setError(null);
+    try {
+      const updated = await api.admin.setSuspension(seller.id, suspending, reason);
+      setSellers((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+    } catch (err) {
+      setError(
+        getErrorMessage(
+          err,
+          suspending ? "Could not suspend this seller." : "Could not reinstate this seller."
+        )
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   const showingFrom = total === 0 ? 0 : offset + 1;
   const showingTo = Math.min(offset + PAGE_SIZE, total);
 
@@ -197,7 +263,7 @@ export default function AdminSellers() {
               <th>Orders</th>
               <th>Order value</th>
               <th>Joined</th>
-              <th className="th-actions">Plan action</th>
+              <th className="th-actions">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -211,6 +277,7 @@ export default function AdminSellers() {
                   >
                     {seller.store_name}
                   </Link>
+                  <SuspendedBadge seller={seller} />
                 </td>
                 <td className="td-muted">{seller.email}</td>
                 <td>
@@ -264,6 +331,24 @@ export default function AdminSellers() {
                           <Icon name="x" size={13} />
                         </button>
                       )}
+                      {/* Cut off / restore. A suspended shop keeps this
+                          button — it is the way back. */}
+                      <button
+                        type="button"
+                        className={`table-action${
+                          seller.suspended_at ? "" : " table-action--danger"
+                        }`}
+                        onClick={() => handleToggleSuspension(seller)}
+                        disabled={busyId === seller.id}
+                        title={
+                          seller.suspended_at
+                            ? `Reinstate ${seller.store_name} — they can log in and take orders again`
+                            : `Suspend ${seller.store_name} — block logins and stop new orders`
+                        }
+                      >
+                        <Icon name={seller.suspended_at ? "check" : "alertCircle"} size={13} />
+                        {seller.suspended_at ? "Reinstate" : "Suspend"}
+                      </button>
                     </div>
                   )}
                 </td>

@@ -73,6 +73,27 @@ class AdminSellerOut(SellerOut):
     """Seller record as seen by the platform admin — with usage stats."""
     orders_count: int
     revenue: float  # non-cancelled orders only
+    # Admin enforcement. NULL suspended_at = the account is active.
+    # Deliberately not on SellerOut: a suspended seller cannot
+    # authenticate at all (login refuses, and every authenticated route
+    # rejects), so their own view of this field is unreachable — the
+    # admin panel is its only consumer.
+    suspended_at: datetime | None = None
+    suspended_reason: str | None = None
+
+
+class SuspensionUpdate(BaseModel):
+    """Admin action: cut off a shop, or put it back.
+
+    `suspended` is a flag rather than two endpoints so the operation is
+    idempotent — clicking Suspend twice cannot produce a different
+    state, and a retried request after a timeout is harmless.
+    """
+
+    suspended: bool
+    # Shown to the admin later when asking "why is this account off?".
+    # Not shown to the seller, whose login message stays generic.
+    reason: str | None = Field(default=None, max_length=200)
 
 
 class AdminSellerListOut(BaseModel):

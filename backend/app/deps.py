@@ -12,6 +12,34 @@ from app.security import decode_access_token, token_issued_at
 # "Authorization: Bearer <token>"
 bearer_scheme = HTTPBearer(auto_error=False)
 
+# Machine-readable marker attached to the "account suspended" 403s, so
+# the frontend can tell that case apart from every other 403 (a seller
+# hitting an admin route, for one) without string-matching user-facing
+# copy that is free to be reworded later. Browsers hide custom response
+# headers unless they are exposed — see expose_headers in app/main.py.
+SUSPENDED_HEADER = "X-OrderKoi-Suspended"
+
+
+def suspended_error() -> HTTPException:
+    """The 403 a suspended account gets, from both places that raise it.
+
+    Defined once because the message and the marker header have to stay
+    in step: this module guards every authenticated route and
+    routes/auth.py guards login, and a change to one of them that
+    missed the other would show up as a frontend bug.
+
+    403, not 401: the token is perfectly valid — the account is the
+    problem. A 401 would make the frontend discard the session and
+    bounce to the login page, which reads as "just sign in again and
+    it'll work", and it wouldn't.
+    """
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="This account has been suspended. Contact support if "
+        "you believe this is a mistake.",
+        headers={SUSPENDED_HEADER: "1"},
+    )
+
 
 def get_current_seller(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
@@ -41,6 +69,10 @@ def get_current_seller(
         issued_at = token_issued_at(credentials.credentials)
         if issued_at is not None and issued_at < seller.token_invalid_before:
             raise unauthorized
+
+    # Admin enforcement — see suspended_error for why this is a 403.
+    if seller.suspended_at is not None:
+        raise suspended_error()
 
     return seller
 

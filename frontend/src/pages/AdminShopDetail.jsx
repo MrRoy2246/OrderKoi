@@ -47,6 +47,11 @@ export default function AdminShopDetail() {
   // Orders vs revenue on the daily chart
   const [measure, setMeasure] = useState("orders");
 
+  // Suspension toggle (admin enforcement) — its own error slot so a
+  // failure there doesn't blank the stats page
+  const [suspending, setSuspending] = useState(false);
+  const [suspendError, setSuspendError] = useState(null);
+
   // PRIMITIVES in the effect deps — see AdminOverview for why an object
   // literal here once caused an infinite fetch loop.
   const window_ =
@@ -106,6 +111,53 @@ export default function AdminShopDetail() {
       setExportError(getErrorMessage(err, "Could not build the report."));
     } finally {
       setExporting(false);
+    }
+  }
+
+  /** Cut this shop off, or put it back — same rules as the sellers
+   * list: a reason is asked for when suspending, and an empty one is
+   * fine. The stats payload carries the rest of the page, so only the
+   * two suspension fields are merged back in from the response. */
+  async function handleToggleSuspension() {
+    const suspending_ = !shop.suspended_at;
+    let reason = null;
+
+    if (suspending_) {
+      const answer = window.prompt(
+        `Suspend ${shop.store_name}?\n\n` +
+          "Their store stops taking orders and they can't log in. " +
+          "Existing orders keep working and tracking stays live.\n\n" +
+          "Reason (optional — recorded for your own reference):",
+        ""
+      );
+      if (answer === null) return;
+      reason = answer.trim() || null;
+    } else if (
+      !window.confirm(
+        `Reinstate ${shop.store_name}? They'll be able to log in and take orders again.`
+      )
+    ) {
+      return;
+    }
+
+    setSuspending(true);
+    setSuspendError(null);
+    try {
+      const updated = await api.admin.setSuspension(sellerId, suspending_, reason);
+      setShop((prev) => ({
+        ...prev,
+        suspended_at: updated.suspended_at,
+        suspended_reason: updated.suspended_reason,
+      }));
+    } catch (err) {
+      setSuspendError(
+        getErrorMessage(
+          err,
+          suspending_ ? "Could not suspend this shop." : "Could not reinstate this shop."
+        )
+      );
+    } finally {
+      setSuspending(false);
     }
   }
 
@@ -226,8 +278,41 @@ export default function AdminShopDetail() {
             <Icon name="download" size={15} />
             {exporting ? "Building…" : "Download report"}
           </button>
+          <button
+            type="button"
+            className={`button ${
+              shop.suspended_at ? "button--outline" : "button--danger-outline"
+            }`}
+            onClick={handleToggleSuspension}
+            disabled={suspending}
+            title={
+              shop.suspended_at
+                ? "Reinstate this shop — they can log in and take orders again"
+                : "Suspend this shop — block logins and stop new orders"
+            }
+          >
+            <Icon name={shop.suspended_at ? "check" : "alertCircle"} size={15} />
+            {suspending ? "Saving…" : shop.suspended_at ? "Reinstate shop" : "Suspend shop"}
+          </button>
         </div>
       </header>
+
+      {/* Current enforcement state, spelled out — the button alone
+          doesn't say since when, or why */}
+      {shop.suspended_at && (
+        <div className="alert alert--error" role="status">
+          <strong>This shop is suspended.</strong> It can't take new orders and the owner
+          can't log in. Existing orders are unaffected and their customers can still track
+          them. Suspended {formatDate(shop.suspended_at)}
+          {shop.suspended_reason ? ` — ${shop.suspended_reason}` : ""}.
+        </div>
+      )}
+
+      {suspendError && (
+        <div className="alert alert--error" role="alert">
+          {suspendError}
+        </div>
+      )}
 
       {exportError && (
         <div className="alert alert--error" role="alert">

@@ -40,6 +40,7 @@ from app.schemas import (
     DailyCount,
     PlanUpdate,
     RecentSignupOut,
+    SuspensionUpdate,
     UpgradeRequestAction,
     pro_prices,
 )
@@ -620,6 +621,11 @@ def seller_shop_stats(
         "plan": seller.plan,
         "plan_expires_at": seller.plan_expires_at,
         "created_at": seller.created_at,
+        # Suspension state, so the shop page can show it and offer the
+        # way back out. Sent here as well as on the directory endpoint
+        # because this page is reachable by direct URL.
+        "suspended_at": seller.suspended_at,
+        "suspended_reason": seller.suspended_reason,
         "range": {"start": window_start.isoformat(), "end": window_end.isoformat()},
         "total_orders": total_orders,
         "revenue": round(revenue, 2),
@@ -1062,6 +1068,16 @@ def update_seller_plan(
             ),
         )
 
+    return _seller_with_stats(seller, db)
+
+
+def _seller_with_stats(seller: Seller, db: Session) -> dict:
+    """One seller as AdminSellerOut expects it: every column, plus the
+    order/revenue totals the admin directory shows.
+
+    Shared by the plan and suspension endpoints so the two can never
+    disagree about what a seller record looks like.
+    """
     order_stats = (
         db.query(
             func.count(Order.id),
@@ -1076,3 +1092,53 @@ def update_seller_plan(
         "orders_count": order_stats[0],
         "revenue": round(float(order_stats[1]), 2),
     }
+
+
+@router.patch(
+    "/sellers/{seller_id}/suspension",
+    response_model=AdminSellerOut,
+    summary="Suspend or reinstate a seller's account",
+)
+def update_seller_suspension(
+    seller_id: int,
+    payload: SuspensionUpdate,
+    db: Session = Depends(get_db),
+    admin: Seller = Depends(get_current_admin),  # noqa: ARG001
+) -> dict:
+    """Cut a shop off, or put it back.
+
+    Suspension is enforced in three places, and all three matter:
+    login refuses to issue a token, get_current_seller rejects every
+    authenticated route, and the public order endpoint refuses new
+    orders. Their existing orders keep working — tracking is untouched
+    — so a suspension never strands the customers who already paid.
+
+    Reversible by design: no rows are deleted, so undoing a mistake is
+    the same one click in the other direction.
+    """
+    seller = db.get(Seller, seller_id)
+    if seller is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Seller not found.")
+
+    # Admins are platform staff, not shops. Suspending one is never the
+    # intent, and suspending yourself would lock the only person who
+    # could undo it out of the panel that does the undoing.
+    if seller.role == "admin":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Admin accounts cannot be suspended.",
+        )
+
+    if payload.suspended:
+        # Keep the original timestamp if already suspended, so a repeat
+        # click (or a retried request) doesn't rewrite when it started
+        seller.suspended_at = seller.suspended_at or utcnow()
+        seller.suspended_reason = payload.reason
+    else:
+        seller.suspended_at = None
+        seller.suspended_reason = None
+
+    db.commit()
+    db.refresh(seller)
+
+    return _seller_with_stats(seller, db)

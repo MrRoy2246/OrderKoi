@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
-from app.deps import get_current_seller
+from app.deps import get_current_seller, suspended_error
 from app.email import send_email
 from app.emails import welcome_verification
 from app import login_throttle
@@ -150,6 +150,13 @@ def login(payload: SellerLogin, db: Session = Depends(get_db)) -> Token:
         )
 
     login_throttle.clear(payload.email)
+
+    # Admin enforcement. Checked only after the password is known to be
+    # correct, so suspension is never disclosed to someone guessing, and
+    # before the verification check, because telling a suspended seller
+    # to verify their email would be a dead end.
+    if seller.suspended_at is not None:
+        raise suspended_error()
 
     # The email address must be verified before the account is usable
     # (backfilled accounts from before this gate are already verified)

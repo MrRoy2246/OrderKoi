@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { api, getErrorMessage } from "../api/client";
 import Icon from "../components/icons";
 import Logo from "../components/Logo";
+import { fetchPublicConfig, getSupportEmail } from "../utils/proPricing";
 
 /**
  * Login — existing accounts. Handles three outcomes distinctly:
@@ -18,6 +19,11 @@ export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const justReset = searchParams.get("reset") === "success";
+  // Set by the API client when a signed-in seller's account was
+  // suspended mid-session (see handleSuspendedSession) — the session is
+  // already gone by the time we get here, so this is the only place the
+  // seller can be told what happened.
+  const wasSuspended = searchParams.get("suspended") === "1";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -28,6 +34,20 @@ export default function Login() {
   const [resendNote, setResendNote] = useState(null);
   const [resending, setResending] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Support address in the suspension notice, from the live backend
+  // config (SUPPORT_EMAIL in backend/.env) — same pattern as the legal
+  // pages, so the address is never hardcoded here
+  const [supportEmail, setSupportEmail] = useState(getSupportEmail());
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchPublicConfig().then(() => {
+      if (!cancelled) setSupportEmail(getSupportEmail());
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -82,6 +102,14 @@ export default function Login() {
         {justReset && (
           <div className="alert alert--success" role="status">
             Password updated — log in with your new password.
+          </div>
+        )}
+
+        {wasSuspended && !error && (
+          <div className="alert alert--error" role="alert">
+            This account has been suspended, so you've been signed out. Contact{" "}
+            <a href={`mailto:${supportEmail}`}>{supportEmail}</a> if you believe this is a
+            mistake.
           </div>
         )}
 
