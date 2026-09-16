@@ -62,9 +62,9 @@ npm run preview   # serves the build locally to verify it
 
 The `dist/` folder is what gets deployed to your domain (Phase 8).
 
-## E2E smoke tests (Playwright)
+## E2E tests (Playwright)
 
-Five end-to-end tests cover the critical paths: landing renders, 404 page, signup check-your-email screen, login → dashboard, and public order form → confirmation → tracking.
+Two specs, 18 tests. `smoke.spec.js` covers the critical paths (landing renders, 404 page, signup check-your-email screen, login → dashboard, public order form → confirmation → tracking, admin overview + sellers). `pages.spec.js` walks every route in `App.jsx` — public, seller, and admin — with a console/network watcher attached, so a page that renders but throws fails with the source file and line that caused it.
 
 ```bash
 # Both dev servers must be running first (backend 8000, frontend 5173)
@@ -72,7 +72,15 @@ npx playwright test
 ```
 
 - Runs one test at a time (`workers: 1`) — the dev backend rate-limits by IP, and parallel tests would trip it
+- **The full suite needs the IP rate limiter off.** The suite logs in a dozen times in under a minute against the `10/min` login bucket, so a single `npx playwright test` ends with `429 Too many requests` on whichever test got there last. Start the dev backend with `RATE_LIMIT_ENABLED=false` for a suite run:
+
+  ```bash
+  cd backend && RATE_LIMIT_ENABLED=false uvicorn app.main:app --port 8000
+  ```
+
+  The limiter is off for the run, not for the app — see the rate-limit table in `.env.example` for the real values. (Running the two spec files individually with a minute between them also works, and keeps the limiter on.) The per-account login lockout (`LOGIN_MAX_FAILURES`, 5 wrong passwords in 15 minutes) is separate and still applies — the suite never uses a wrong password, so it does not trip it.
 - Uses the long-lived dev seller account (`test@gmail.com`) — no email-verification round trip needed
+- Tests clean up their own orders through the API. `smoke.spec.js` still leaves one unverified `e2e-<timestamp>@example.com` account per run (there is no delete-seller endpoint by design) — harmless, but the dev database accumulates them.
 - First run only: `npx playwright install chromium`
 
 ## Testing it yourself
@@ -96,7 +104,7 @@ frontend/
 │   ├── pages/             # One file per page (dashboard, orders, settings, admin/*, public form, tracking, verify-email, legal, 404)
 │   ├── components/        # Reusable UI (badges, meters, modals, charts, skeletons)
 │   └── utils/             # Date/business-time, order formatting, live business config (proPricing.js), hooks
-├── e2e/                   # Playwright smoke tests (smoke.spec.js)
+├── e2e/                   # Playwright tests — smoke.spec.js (critical paths) + pages.spec.js (every route, console watched), watch.js
 ├── scripts/
 │   └── generate-assets.mjs  # Regenerates favicon.ico / apple-touch-icon / og-image from the SVG logo
 ├── public/                # Static files served as-is: favicon, apple-touch-icon, og-image, robots.txt
