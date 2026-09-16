@@ -11,11 +11,16 @@ import os
 # Must be set before the app reads its settings — disables rate
 # limiting for the suite (it has its own dedicated unit tests), forces
 # the email console backend so fixture signups never attempt a real
-# SMTP connection (backend/.env may carry live SMTP credentials), and
+# SMTP connection (backend/.env carries live SMTP credentials), and
 # redirects every connection to the throwaway test database (real env
 # vars take priority over .env, so no file editing is needed).
 os.environ["ENVIRONMENT"] = "test"
-os.environ["SMTP_HOST"] = ""
+# EMAIL_BACKEND, not SMTP_HOST="": app/config.py sets
+# env_ignore_empty=True, so an empty env var means "unset" and
+# backend/.env's real SMTP_HOST would win — which is how this suite
+# used to send live Gmail on every signup and hang for minutes on
+# Google's throttling. "console" is a non-empty value, so it sticks.
+os.environ["EMAIL_BACKEND"] = "console"
 os.environ["PG_DATABASE"] = "orderkoi_test"
 
 import pytest  # noqa: E402

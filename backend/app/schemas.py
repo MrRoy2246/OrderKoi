@@ -8,7 +8,7 @@ import enum
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
 # ---------- Auth ----------
@@ -285,11 +285,37 @@ class AdminSubscriptionEventOut(SubscriptionEventOut):
 
 OrderStatusLiteral = Literal["placed", "confirmed", "shipped", "delivered", "cancelled"]
 
+# Read once at import, like every other module here. Both ceilings are
+# env-tunable (MAX_ITEM_PRICE / MAX_ORDER_TOTAL).
+_order_limits = get_settings()
+
+
+def _check_order_total(items: list["OrderItem"]) -> None:
+    """Reject a basket whose total would overflow the money column.
+
+    Capping the unit price is not enough on its own: 100 items × 999
+    units × the price cap still lands far outside Numeric(12,2). The
+    sum is what gets stored, so the sum is what has to be bounded.
+    """
+    total = sum(item.quantity * item.price for item in items)
+    if total > _order_limits.max_order_total:
+        raise ValueError(
+            f"Order total ({total:,.2f}) exceeds the maximum allowed "
+            f"({_order_limits.max_order_total:,.2f})."
+        )
+
 
 class OrderItem(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     quantity: int = Field(ge=1, le=999)
-    price: float = Field(ge=0, description="Unit price")
+    # Upper-bounded deliberately: an unbounded price overflows
+    # Numeric(12,2) and turns a malformed request into a 500 — on the
+    # public order form, one an anonymous stranger can trigger.
+    price: float = Field(
+        ge=0,
+        le=_order_limits.max_item_price,
+        description="Unit price",
+    )
 
 
 class OrderCreate(BaseModel):
@@ -300,6 +326,11 @@ class OrderCreate(BaseModel):
     items: list[OrderItem] = Field(min_length=1, max_length=100)
     notes: str | None = Field(default=None, max_length=1000)
 
+    @model_validator(mode="after")
+    def _validate_order_total(self) -> "OrderCreate":
+        _check_order_total(self.items)
+        return self
+
 
 class OrderUpdate(BaseModel):
     """Editable fields — status changes go through their own endpoint."""
@@ -309,6 +340,13 @@ class OrderUpdate(BaseModel):
     customer_address: str | None = Field(default=None, max_length=500)
     notes: str | None = Field(default=None, max_length=1000)
     items: list[OrderItem] | None = Field(default=None, min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def _validate_order_total(self) -> "OrderUpdate":
+        # items is optional here — only an edit that touches them is checked
+        if self.items is not None:
+            _check_order_total(self.items)
+        return self
 
 
 class OrderStatusUpdate(BaseModel):

@@ -17,28 +17,67 @@ from app.routes import admin, auth, orders, public, tracking
 settings = get_settings()
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
 logger = logging.getLogger("orderkoi")
 
 
 def _validate_production_config() -> None:
-    """Refuse to run in production with a default/weak secret key.
+    """Refuse to boot a production deployment that is misconfigured.
 
-    If the app ever starts with the publicly-known default, every JWT
-    it signs is forgeable by anyone who has read the source — total
-    account takeover, including admin. Better to crash at boot than
-    run insecure.
+    Every check here is fail-closed: crash at startup rather than run
+    in a state that silently loses accounts, emails, or security.
+    Development and test are deliberately exempt so `alembic upgrade
+    head`, the test suite, and local work keep functioning.
+
+    All problems are collected and reported together — fixing one
+    misconfiguration only to hit the next on the following restart is
+    a miserable way to deploy.
     """
     if settings.environment != "production":
         return
+
+    problems: list[str] = []
+
+    # A forgeable JWT secret is total account takeover, including
+    # admin: anyone who has read the source can mint a valid token.
     if settings.secret_key == "dev-only-change-me" or len(settings.secret_key) < 32:
+        problems.append(
+            "SECRET_KEY is missing, default, or too short — every JWT "
+            "would be forgeable. Generate one with "
+            "`python -c \"import secrets; print(secrets.token_hex(32))\"`."
+        )
+
+    # Without SMTP, signup is a dead end: login requires a verified
+    # email, and verification links are only printed to the log. Every
+    # new account would be permanently unreachable, so this is not a
+    # "warning" — the deployment cannot function.
+    #
+    # uses_console_email rather than `not smtp_host` so an explicit
+    # EMAIL_BACKEND=console is caught too: setting a real SMTP_HOST
+    # while leaving the backend on console is the more confusing of
+    # the two mistakes, and it passes an smtp_host check silently.
+    if settings.uses_console_email:
+        problems.append(
+            "email is on the console backend (EMAIL_BACKEND=console, or "
+            "SMTP_HOST empty) — verification and password-reset emails "
+            "would only be written to the log, so no user could ever "
+            "sign in or recover an account."
+        )
+
+    # Reset/verification links are built from this. Pointing at
+    # localhost means every emailed link is dead on arrival.
+    if "localhost" in settings.frontend_url or "127.0.0.1" in settings.frontend_url:
+        problems.append(
+            f"FRONTEND_URL is still {settings.frontend_url!r} — every "
+            "password-reset and verification link would be unusable."
+        )
+
+    if problems:
         raise RuntimeError(
-            "REFUSING TO START: SECRET_KEY is missing, default, or too short "
-            "for production. Generate a long random value with "
-            "`python -c \"import secrets; print(secrets.token_hex(32))\"` "
-            "and set it in backend/.env."
+            "REFUSING TO START — production configuration is invalid:\n  - "
+            + "\n  - ".join(problems)
         )
 
 
@@ -63,14 +102,12 @@ app = FastAPI(
         "Sellers manage orders; customers track them via a public link."
     ),
     lifespan=lifespan,
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # Off in production unless ENABLE_API_DOCS=true — /docs and
+    # /openapi.json are unauthenticated and enumerate every admin
+    # route, which is a map of what to attack.
+    docs_url="/docs" if settings.api_docs_enabled else None,
+    redoc_url="/redoc" if settings.api_docs_enabled else None,
+    openapi_url="/openapi.json" if settings.api_docs_enabled else None,
 )
 
 
@@ -101,6 +138,24 @@ async def security_headers_middleware(request: Request, call_next):
     for header, value in SECURITY_HEADERS.items():
         response.headers[header] = value
     return response
+
+
+# CORS is added LAST so it sits OUTERMOST in the stack (Starlette
+# wraps in reverse order of registration). That position is the whole
+# point: the rate limiter below short-circuits with its own 429
+# response, and a middleware that returns without calling
+# `call_next` only gets headers from layers outside it. Added
+# anywhere else, a rate-limited browser request came back with no
+# Access-Control-Allow-Origin and the frontend reported a CORS error
+# instead of "you're going too fast" — so the user never saw the real
+# message and the client could not read the Retry-After.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.exception_handler(Exception)

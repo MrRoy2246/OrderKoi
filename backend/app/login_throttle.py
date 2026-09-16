@@ -18,10 +18,16 @@ import threading
 import time
 from collections import defaultdict, deque
 
-# Failures before lockout, and how long things are remembered
-MAX_FAILURES = 5
-FAILURE_WINDOW_SECONDS = 15 * 60  # failures older than this don't count
-LOCKOUT_SECONDS = 15 * 60  # how long the account stays locked
+from app.config import get_settings
+
+settings = get_settings()
+
+# Failures before lockout, and how long things are remembered. All
+# three are settings so an operator can loosen or tighten the lock
+# without a code change (see backend/.env.example).
+MAX_FAILURES = settings.login_max_failures
+FAILURE_WINDOW_SECONDS = settings.login_failure_window_minutes * 60
+LOCKOUT_SECONDS = settings.login_lockout_minutes * 60
 
 _lock = threading.Lock()
 # email -> timestamps (monotonic) of recent failed attempts

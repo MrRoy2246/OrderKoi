@@ -1,9 +1,18 @@
-# Never bake into the image:
-venv/              # dev virtualenv (stale global tools live there too)
-.env               # secrets — config reaches the container via compose env
+# Never bake into the image.
+#
+# NOTE: Docker only treats a line as a comment when '#' is the FIRST
+# character — a trailing "# ..." makes the whole line a literal
+# pattern that matches nothing. Keep comments on their own lines.
+
+# dev virtualenv (stale global tools live there too)
+venv/
+# secrets — config reaches the container via compose env
+.env
 __pycache__/
 *.pyc
 .pytest_cache/
-tests/             # test suite runs on the host, not in the image
-backups/           # dev DB dumps
+# test suite runs on the host, not in the image
+tests/
+# dev DB dumps
+backups/
 requirements-dev.txt

@@ -537,3 +537,81 @@ def test_orders_multi_status_filter(client, auth_headers, order):
         "/orders?status=delivered&status=cancelled", headers=auth_headers
     )
     assert response.json()["total"] == 0
+
+
+# ---------- One ledger row per upgrade request ----------
+
+def test_approving_the_same_request_twice_is_refused(client, auth_headers, admin_headers):
+    """The row lock makes the second approval see status="approved" and
+    409 — instead of granting the same months twice."""
+    created = client.post(
+        "/auth/upgrade-requests", json={"months": 1}, headers=auth_headers
+    )
+    assert created.status_code == 201, created.text
+    request_id = created.json()["id"]
+
+    first = client.patch(
+        f"/admin/upgrade-requests/{request_id}",
+        json={"action": "approve"},
+        headers=admin_headers,
+    )
+    assert first.status_code == 200, first.text
+
+    second = client.patch(
+        f"/admin/upgrade-requests/{request_id}",
+        json={"action": "approve"},
+        headers=admin_headers,
+    )
+    assert second.status_code == 409
+
+
+def test_the_database_refuses_a_second_ledger_row(
+    client, auth_headers, admin_headers, seller
+):
+    """The endpoint's guard is the first line of defence; this index is
+    the backstop that holds even if a future code path forgets to
+    check. Two ledger rows for one payment would overstate revenue."""
+    import pytest
+    from sqlalchemy.exc import IntegrityError
+
+    from app.models import SubscriptionEvent
+    from conftest import TestingSessionLocal
+
+    created = client.post(
+        "/auth/upgrade-requests",
+        json={"months": 1, "payment_reference": "TXN-LEDGER-TEST"},
+        headers=auth_headers,
+    )
+    assert created.status_code == 201, created.text
+    request_id = created.json()["id"]
+
+    approved = client.patch(
+        f"/admin/upgrade-requests/{request_id}",
+        json={"action": "approve"},
+        headers=admin_headers,
+    )
+    assert approved.status_code == 200, approved.text
+
+    db = TestingSessionLocal()
+    try:
+        written = (
+            db.query(SubscriptionEvent)
+            .filter(SubscriptionEvent.request_id == request_id)
+            .count()
+        )
+        assert written == 1
+
+        db.add(
+            SubscriptionEvent(
+                seller_id=seller["id"],
+                event="renewed",
+                months=1,
+                comp=False,
+                request_id=request_id,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
+    finally:
+        db.close()

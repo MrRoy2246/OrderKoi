@@ -804,3 +804,34 @@ def test_seller_orders_csv_excludes_other_shops(client, admin_headers, seller, a
     assert response.status_code == 200
     assert "Rahim Uddin" in response.text
     assert "CSV Excluded Buyer" not in response.text
+
+
+def test_admin_export_is_capped(
+    client, admin_headers, auth_headers, seller, order, monkeypatch
+):
+    """A support export must not drag unbounded rows through memory.
+
+    The cap is env-tunable (ADMIN_EXPORT_MAX_ROWS) and lowered here so
+    the test doesn't have to create 20,000 orders.
+    """
+    monkeypatch.setattr("app.routes.admin.settings.admin_export_max_rows", 1)
+
+    # A second order for the same seller, so the cap actually bites
+    extra = client.post(
+        "/orders",
+        json={
+            "customer_name": "Second Buyer",
+            "customer_phone": "01777777777",
+            "items": [{"name": "Y", "quantity": 1, "price": 200}],
+        },
+        headers=auth_headers,
+    )
+    assert extra.status_code == 201
+
+    response = client.get(
+        f"/admin/sellers/{seller['id']}/orders.csv", headers=admin_headers
+    )
+    assert response.status_code == 200
+
+    rows = [line for line in response.text.strip().splitlines() if line.strip()]
+    assert len(rows) == 2  # header + exactly one capped data row

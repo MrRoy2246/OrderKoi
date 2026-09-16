@@ -16,6 +16,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import get_db
 from app.deps import get_current_admin
 from app.email import send_email
@@ -53,6 +54,8 @@ from app.timezone import (
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+settings = get_settings()
 
 
 def _add_months(moment: datetime, months: int) -> datetime:
@@ -675,6 +678,12 @@ def export_seller_orders_csv(
             Order.created_at < window_end_dt,
         )
         .order_by(Order.created_at.desc(), Order.id.desc())
+        # Same safety valve as the seller's own export: a full export
+        # must not be able to drag unbounded rows through memory. The
+        # newest rows are kept (the ordering above), which is what an
+        # operator actually wants from a support export. Tunable via
+        # ADMIN_EXPORT_MAX_ROWS.
+        .limit(settings.admin_export_max_rows)
         .all()
     )
 
@@ -796,7 +805,11 @@ def handle_upgrade_request(
     db: Session = Depends(get_db),
     admin: Seller = Depends(get_current_admin),  # noqa: ARG001 — guards access
 ) -> dict:
-    request = db.get(UpgradeRequest, request_id)
+    # FOR UPDATE so two admins clicking Approve at the same instant
+    # can't both pass the "pending" check below: the loser blocks here
+    # until the winner commits, then reads status="approved" and gets a
+    # 409 — instead of granting the same months twice.
+    request = db.get(UpgradeRequest, request_id, with_for_update=True)
     if request is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Upgrade request not found."
@@ -807,7 +820,12 @@ def handle_upgrade_request(
             detail=f"This request was already {request.status}.",
         )
 
-    seller = db.get(Seller, request.seller_id)
+    # Lock the seller too. Two DIFFERENT pending requests for the same
+    # seller approved concurrently would otherwise both read the same
+    # current expiry and both write base+months — silently losing a
+    # month the seller paid for. (Same lock order as above, so these
+    # two locks can never deadlock against each other.)
+    seller = db.get(Seller, request.seller_id, with_for_update=True)
     if seller is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Seller no longer exists."

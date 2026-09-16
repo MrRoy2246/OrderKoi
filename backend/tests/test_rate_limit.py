@@ -82,3 +82,85 @@ def test_public_submission_limit_is_tight_and_post_scoped():
     # GETs on the same path are unaffected by the submission rule
     for _ in range(5):
         assert enforce_rate_limits(make_request("GET")) is None
+
+
+# ---------- HTTP-level behaviour of the limiter ----------
+
+def _make_request(http_method: str, path: str, ip: str = "203.0.113.99"):
+    from fastapi import Request
+
+    return Request(
+        {
+            "type": "http",
+            "method": http_method,
+            "path": path,
+            "headers": [],
+            "query_string": b"",
+            "scheme": "http",
+            "server": ("test", 80),
+            "root_path": "",
+            "client": (ip, 11111),
+        }
+    )
+
+
+def _reset_limiters():
+    from app import rate_limit
+
+    for limiter in rate_limit._limiters.values():
+        limiter._hits.clear()
+
+
+def test_rate_limited_response_carries_cors_headers(client, monkeypatch):
+    """A browser must be able to READ the 429.
+
+    The limiter short-circuits inside a middleware, and a middleware
+    that returns without calling `call_next` only inherits headers from
+    the layers OUTSIDE it. With CORS registered anywhere but outermost,
+    a rate-limited browser request came back with no
+    Access-Control-Allow-Origin — so the frontend reported a CORS
+    failure instead of "you're going too fast", and could not read
+    Retry-After either.
+    """
+    from app.main import settings
+
+    monkeypatch.setattr(settings, "environment", "development")
+    origin = settings.cors_origins[0]
+
+    try:
+        last = None
+        # A DIFFERENT email each attempt: this must trip the per-IP
+        # limiter, not the per-account lockout. The lockout 429s from
+        # inside the route, where CORS headers are applied anyway — the
+        # test would pass for the wrong reason.
+        for index in range(settings.rate_limit_login_max + 1):
+            last = client.post(
+                "/auth/login",
+                json={"email": f"nobody-{index}@example.com", "password": "wrongpass123"},
+                headers={"Origin": origin},
+            )
+
+        assert last.status_code == 429
+        assert last.headers.get("access-control-allow-origin") == origin
+        assert last.headers.get("retry-after") == str(
+            int(settings.rate_limit_login_window)
+        )
+    finally:
+        # Never leak an exhausted budget into another test
+        _reset_limiters()
+
+
+def test_rate_limiting_can_be_switched_off(monkeypatch):
+    """RATE_LIMIT_ENABLED=false — for load testing, never production."""
+    from app import rate_limit
+
+    monkeypatch.setattr(rate_limit.settings, "rate_limit_enabled", False)
+    try:
+        login_limit = next(r[2] for r in rate_limit.RULES if r[0] == "/auth/login")
+        # Well past the budget — every request is allowed anyway
+        for _ in range(login_limit * 3):
+            assert rate_limit.enforce_rate_limits(
+                _make_request("POST", "/auth/login")
+            ) is None
+    finally:
+        _reset_limiters()

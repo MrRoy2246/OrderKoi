@@ -30,13 +30,26 @@ settings = get_settings()
 # Attempts and delays for a background send. Gmail occasionally has a
 # slow moment or drops a connection — a short retry covers the vast
 # majority of transient failures without delaying "giving up" much.
-SEND_ATTEMPTS = 3
-RETRY_DELAYS_SECONDS = (2, 10)  # before attempt 2 and 3
+# Both are settings (EMAIL_SEND_ATTEMPTS / EMAIL_RETRY_DELAYS_SECONDS).
+SEND_ATTEMPTS = settings.email_send_attempts
+RETRY_DELAYS_SECONDS = tuple(settings.email_retry_delays_seconds)
 
 # Fixed number of concurrent SMTP senders. 4 spreads retries across
 # the pool without hammering the relay; queued messages are tiny, so a
 # burst just builds a short in-memory queue instead of a thread bomb.
-EMAIL_WORKERS = 4
+EMAIL_WORKERS = settings.email_workers
+
+
+def _console_logs_body() -> bool:
+    """Whether the console backend may print the full message body.
+
+    Bodies carry password-reset and email-verification links, so this
+    must be off anywhere the log is retained — only local development
+    defaults to on. Override with EMAIL_CONSOLE_LOGS_BODY.
+    """
+    if settings.email_console_logs_body is not None:
+        return settings.email_console_logs_body
+    return settings.environment == "development"
 
 # Created lazily so importing this module never spins up threads (the
 # console backend, tests, and scripts don't need a pool at all).
@@ -60,7 +73,9 @@ def _send_now(to: str, subject: str, body: str) -> None:
     message["Subject"] = subject
     message.set_content(body)
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as server:
+    with smtplib.SMTP(
+        settings.smtp_host, settings.smtp_port, timeout=settings.smtp_timeout_seconds
+    ) as server:
         server.starttls()
         if settings.smtp_username:
             server.login(settings.smtp_username, settings.smtp_password)
@@ -96,13 +111,19 @@ def send_email(to: str, subject: str, body: str) -> None:
     """Queue an email for delivery. Never raises — email problems must
     not break the request that triggered them, and must not delay it
     either: real SMTP runs on the fixed worker pool; the console
-    backend (development, no SMTP_HOST) logs inline so dev output
-    stays ordered.
+    backend (EMAIL_BACKEND=console, or the default when SMTP_HOST is
+    empty) logs inline so dev output stays ordered.
     """
-    if not settings.smtp_host:
-        logger.info(
-            "EMAIL (console backend)\n  To: %s\n  Subject: %s\n  Body:\n%s", to, subject, body
-        )
+    if settings.uses_console_email:
+        if _console_logs_body():
+            logger.info(
+                "EMAIL (console backend)\n  To: %s\n  Subject: %s\n  Body:\n%s", to, subject, body
+            )
+        else:
+            # Body suppressed — it may contain reset/verification links.
+            logger.info(
+                "EMAIL (console backend, body suppressed)\n  To: %s\n  Subject: %s", to, subject
+            )
         return
 
     _get_executor().submit(_deliver_with_retry, to, subject, body)

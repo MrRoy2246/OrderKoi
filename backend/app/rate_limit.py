@@ -18,19 +18,71 @@ from collections import defaultdict, deque
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-# (path prefix, HTTP method (None = any), max requests, window in seconds)
-RULES: list[tuple[str, str | None, int, float]] = [
-    ("/auth/login", None, 10, 60),
-    ("/auth/signup", None, 5, 60),
-    ("/auth/forgot-password", None, 5, 60),  # prevents email bombing
-    ("/auth/resend-verification", None, 5, 60),  # same — sends email
-    ("/track/", None, 60, 60),
-    # Every form submission burns the seller's free-plan quota and
-    # triggers a notification email — keep submissions tight. Scoped
-    # to POST so loading the form (GET) isn't caught by it.
-    ("/public/stores/", "POST", 10, 60),
-    ("/public/", None, 30, 60),  # form loads / store lookups
-]
+from app.config import get_settings
+
+settings = get_settings()
+
+
+def _build_rules() -> list[tuple[str, str | None, int, float]]:
+    """(path prefix, HTTP method (None = any), max requests, window seconds).
+
+    Every limit is a setting, so tuning for a deployment (e.g. raising
+    the login cap where mobile-carrier CGNAT puts many users behind one
+    IP) is an .env edit, not a code change.
+    """
+    return [
+        (
+            "/auth/login",
+            None,
+            settings.rate_limit_login_max,
+            settings.rate_limit_login_window,
+        ),
+        (
+            "/auth/signup",
+            None,
+            settings.rate_limit_signup_max,
+            settings.rate_limit_signup_window,
+        ),
+        # forgot-password prevents email bombing
+        (
+            "/auth/forgot-password",
+            None,
+            settings.rate_limit_forgot_password_max,
+            settings.rate_limit_forgot_password_window,
+        ),
+        # resend-verification — same, it sends email
+        (
+            "/auth/resend-verification",
+            None,
+            settings.rate_limit_resend_verification_max,
+            settings.rate_limit_resend_verification_window,
+        ),
+        (
+            "/track/",
+            None,
+            settings.rate_limit_track_max,
+            settings.rate_limit_track_window,
+        ),
+        # Every form submission burns the seller's free-plan quota and
+        # triggers a notification email — keep submissions tight. Scoped
+        # to POST so loading the form (GET) isn't caught by it.
+        (
+            "/public/stores/",
+            "POST",
+            settings.rate_limit_public_form_max,
+            settings.rate_limit_public_form_window,
+        ),
+        # form loads / store lookups
+        (
+            "/public/",
+            None,
+            settings.rate_limit_public_max,
+            settings.rate_limit_public_window,
+        ),
+    ]
+
+
+RULES: list[tuple[str, str | None, int, float]] = _build_rules()
 
 
 class SlidingWindowLimiter:
@@ -80,6 +132,9 @@ def enforce_rate_limits(request: Request) -> JSONResponse | None:
 
     Returns a 429 JSONResponse when limited, or None when allowed.
     """
+    if not settings.rate_limit_enabled:
+        return None
+
     path = request.url.path
     method = request.method.upper()
     client_ip = request.client.host if request.client else "unknown"

@@ -550,3 +550,59 @@ def test_email_failure_never_blocks_status_change(client, auth_headers, order, m
     )
     assert response.status_code == 200
     assert response.json()["status"] == "confirmed"
+
+
+# ---------- Money ceilings ----------
+# An unbounded price overflows the Numeric(12,2) column, so the insert
+# blows up and the request 500s. On the public order form that is
+# reachable by an anonymous stranger, so these must be 422s — a
+# rejected request, never a crash.
+
+# The default MAX_ITEM_PRICE (app/config.py).
+ITEM_PRICE_CAP = 10_000_000
+
+
+def _overflowing_items():
+    """100 items at the unit cap: every price is legal on its own, the
+    sum is far outside Numeric(12,2)."""
+    return [
+        {"name": f"Item {i}", "quantity": 999, "price": ITEM_PRICE_CAP}
+        for i in range(100)
+    ]
+
+
+def test_absurd_unit_price_is_rejected_not_a_500(client, auth_headers, order_payload):
+    payload = {
+        **order_payload,
+        "items": [{"name": "Widget", "quantity": 1, "price": 10**18}],
+    }
+    response = client.post("/orders", json=payload, headers=auth_headers)
+    assert response.status_code == 422
+
+
+def test_absurd_order_total_is_rejected_not_a_500(client, auth_headers, order_payload):
+    """Capping the unit price is not enough on its own — the SUM is what
+    gets stored, so the sum is what has to be bounded."""
+    payload = {**order_payload, "items": _overflowing_items()}
+    response = client.post("/orders", json=payload, headers=auth_headers)
+    assert response.status_code == 422
+
+
+def test_order_update_rejects_an_overflowing_total(client, auth_headers, order):
+    """The edit path takes items too, so it needs the same bound."""
+    response = client.patch(
+        f"/orders/{order['id']}",
+        json={"items": _overflowing_items()},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
+def test_price_exactly_at_the_cap_is_accepted(client, auth_headers, order_payload):
+    """The boundary itself must stay usable."""
+    payload = {
+        **order_payload,
+        "items": [{"name": "Luxury item", "quantity": 1, "price": ITEM_PRICE_CAP}],
+    }
+    response = client.post("/orders", json=payload, headers=auth_headers)
+    assert response.status_code == 201

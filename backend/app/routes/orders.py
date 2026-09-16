@@ -140,6 +140,16 @@ def _check_plan_limit(seller: Seller, db: Session) -> None:
     if pro_plan_active(seller):
         return
 
+    # Serialize concurrent order creation for this seller BEFORE
+    # counting. Counting first and inserting later is a check-then-act
+    # race: two simultaneous submissions both read "14 used", both
+    # decide they are within the 15-order allowance, and the seller
+    # ends up with 16 free orders. The row lock is held until this
+    # request commits, so the second request counts the first one's
+    # insert. Only reached for free-plan sellers, so Pro shops never
+    # pay for it.
+    db.refresh(seller, with_for_update=True)
+
     used = _lifetime_order_count(seller, db)
     if used >= settings.free_plan_orders:
         raise HTTPException(
@@ -268,8 +278,9 @@ def list_orders(
 
 
 # Safety valve: a full export is bounded so it can't be used to drag
-# unbounded rows through memory (10k rows ≈ a few MB of CSV)
-EXPORT_MAX_ROWS = 10_000
+# unbounded rows through memory (10k rows ≈ a few MB of CSV). Tunable
+# via EXPORT_MAX_ROWS.
+EXPORT_MAX_ROWS = settings.export_max_rows
 
 
 # NOTE: registered before /{order_id} so "export" isn't captured as an id

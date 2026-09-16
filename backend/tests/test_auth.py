@@ -206,6 +206,15 @@ def test_production_refuses_default_secret_key(monkeypatch):
     from app.main import _validate_production_config
 
     monkeypatch.setattr("app.main.settings.environment", "production")
+    # Valid, so each assertion below isolates the secret key alone.
+    # email_backend too: conftest pins it to "console" for the whole
+    # suite so tests never touch the network, which would otherwise
+    # trip the email check and mask what this test is asserting.
+    monkeypatch.setattr("app.main.settings.email_backend", "smtp")
+    monkeypatch.setattr("app.main.settings.smtp_host", "smtp.example.com")
+    monkeypatch.setattr(
+        "app.main.settings.frontend_url", "https://orderkoi.example.com"
+    )
 
     # The known default — must refuse
     monkeypatch.setattr("app.main.settings.secret_key", "dev-only-change-me")
@@ -228,3 +237,83 @@ def test_dev_and_test_environments_skip_the_guard(monkeypatch):
     monkeypatch.setattr("app.main.settings.environment", "development")
     monkeypatch.setattr("app.main.settings.secret_key", "dev-only-change-me")
     _validate_production_config()  # no raise — dev keeps working
+
+
+def test_production_refuses_the_console_email_backend(monkeypatch):
+    """No SMTP in production is not a warning — login requires a
+    verified email, so without a mail path every signup is a dead end
+    and no password can ever be reset."""
+    import pytest
+
+    from app.main import _validate_production_config
+
+    monkeypatch.setattr("app.main.settings.environment", "production")
+    monkeypatch.setattr("app.main.settings.secret_key", "a" * 64)
+    monkeypatch.setattr(
+        "app.main.settings.frontend_url", "https://orderkoi.example.com"
+    )
+    # "auto" so this exercises the empty-SMTP_HOST path specifically,
+    # rather than conftest's suite-wide EMAIL_BACKEND=console
+    monkeypatch.setattr("app.main.settings.email_backend", "auto")
+    monkeypatch.setattr("app.main.settings.smtp_host", "")
+
+    with pytest.raises(RuntimeError, match="SMTP_HOST"):
+        _validate_production_config()
+
+
+def test_production_refuses_an_explicit_console_email_backend(monkeypatch):
+    """EMAIL_BACKEND=console with a perfectly good SMTP_HOST set is the
+    more dangerous variant: every smtp_host check passes, and mail still
+    never leaves the process. Verified emails and working resets both
+    silently stop."""
+    import pytest
+
+    from app.main import _validate_production_config
+
+    monkeypatch.setattr("app.main.settings.environment", "production")
+    monkeypatch.setattr("app.main.settings.secret_key", "a" * 64)
+    monkeypatch.setattr(
+        "app.main.settings.frontend_url", "https://orderkoi.example.com"
+    )
+    monkeypatch.setattr("app.main.settings.smtp_host", "smtp.gmail.com")
+    monkeypatch.setattr("app.main.settings.email_backend", "console")
+
+    with pytest.raises(RuntimeError, match="console backend"):
+        _validate_production_config()
+
+
+def test_production_refuses_localhost_frontend_url(monkeypatch):
+    """Reset/verification links are built from FRONTEND_URL — pointing
+    at localhost makes every emailed link dead on arrival."""
+    import pytest
+
+    from app.main import _validate_production_config
+
+    monkeypatch.setattr("app.main.settings.environment", "production")
+    monkeypatch.setattr("app.main.settings.secret_key", "a" * 64)
+    monkeypatch.setattr("app.main.settings.smtp_host", "smtp.example.com")
+    monkeypatch.setattr("app.main.settings.frontend_url", "http://localhost:5173")
+
+    with pytest.raises(RuntimeError, match="FRONTEND_URL"):
+        _validate_production_config()
+
+
+def test_production_guard_reports_every_problem_at_once(monkeypatch):
+    """Fixing one mistake only to hit the next on the following restart
+    is a miserable way to deploy — report them together."""
+    import pytest
+
+    from app.main import _validate_production_config
+
+    monkeypatch.setattr("app.main.settings.environment", "production")
+    monkeypatch.setattr("app.main.settings.secret_key", "dev-only-change-me")
+    monkeypatch.setattr("app.main.settings.smtp_host", "")
+    monkeypatch.setattr("app.main.settings.frontend_url", "http://localhost:5173")
+
+    with pytest.raises(RuntimeError) as excinfo:
+        _validate_production_config()
+
+    message = str(excinfo.value)
+    assert "SECRET_KEY" in message
+    assert "SMTP_HOST" in message
+    assert "FRONTEND_URL" in message

@@ -4,7 +4,7 @@ import enum
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, UniqueConstraint, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -196,13 +196,31 @@ class SubscriptionEvent(Base):
     # cancellations and manual admin changes) — lets the seller's
     # history show an approved request and its activation as ONE row
     request_id: Mapped[int | None] = mapped_column(
-        ForeignKey("upgrade_requests.id", ondelete="SET NULL"), nullable=True, index=True
+        ForeignKey("upgrade_requests.id", ondelete="SET NULL"), nullable=True
     )
     # human context, e.g. "active until 1 Mar 2027" or "cancelled by seller"
     note: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+
+    __table_args__ = (
+        # At most ONE ledger row per upgrade request, enforced by the
+        # database rather than by the approval endpoint remembering to
+        # check. Without it, a double-approved request (or a retried
+        # request) would write the same payment into the ledger twice
+        # and inflate subscription revenue.
+        #
+        # Partial, because request_id is NULL for seller cancellations
+        # and manual admin plan changes — those are legitimately
+        # unbounded and must stay allowed.
+        Index(
+            "uq_subscription_events_request_id",
+            "request_id",
+            unique=True,
+            postgresql_where=text("request_id IS NOT NULL"),
+        ),
     )
 
     def __repr__(self) -> str:
