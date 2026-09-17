@@ -11,6 +11,10 @@ import { defineConfig } from "@playwright/test";
  *
  * The suite uses the long-lived dev seller account (test@gmail.com,
  * Pro plan) so it can log in without an email-verification round trip.
+ *
+ * baseURL follows E2E_BASE_URL so the suite can run while another
+ * Vite project holds the default 5173 port:
+ *   E2E_BASE_URL=http://localhost:5174 npx playwright test
  */
 export default defineConfig({
   testDir: "./e2e",
@@ -19,7 +23,7 @@ export default defineConfig({
   workers: 1, // one at a time — the dev backend rate-limits by IP
   reporter: [["list"]],
   use: {
-    baseURL: "http://localhost:5173",
+    baseURL: process.env.E2E_BASE_URL || "http://localhost:5173",
     headless: true,
     trace: "retain-on-failure",
   },

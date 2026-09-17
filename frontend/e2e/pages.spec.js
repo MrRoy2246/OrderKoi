@@ -325,7 +325,10 @@ test("the admin can suspend a seller and put it back", async ({ page }) => {
   test.skip(!target, "no sweep account in this database — run scripts/api_sweep.py first");
 
   await page.goto(`/admin/sellers/${target.id}`);
-  await expect(page.getByRole("heading", { name: /^Shop/ })).toBeVisible();
+  // The h1 is the store NAME (+ plan) — arbitrary data, so assert the
+  // heading level, never a name pattern (a store called "Shop" would be
+  // the only thing /^Shop/ could ever match).
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
   try {
     // Suspending asks for a reason through window.prompt, so the dialog
