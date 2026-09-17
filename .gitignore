@@ -27,3 +27,6 @@ Thumbs.db
 # --- Playwright ---
 test-results/
 playwright-report/
+
+# --- Codebuff (local agent state) ---
+.freebuff/
