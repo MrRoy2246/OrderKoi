@@ -5,7 +5,7 @@
 # give every visitor two separate buckets (and the buckets would be
 # half as effective). Redis-backed limiting is the scale-out upgrade;
 # until then one worker is a correctness requirement, not a choice.
-FROM python:3.12-slim
+FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

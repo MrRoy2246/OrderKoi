@@ -61,7 +61,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"  # matches backend/Dockerfile
+          python-version: "3.11"  # matches backend/Dockerfile and local dev
           cache: pip
           cache-dependency-path: backend/requirements*.txt
 
